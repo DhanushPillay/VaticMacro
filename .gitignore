@@ -35,9 +35,13 @@ env/
 # Jupyter
 .ipynb_checkpoints/
 
+# Data (needed for Docker deployment)
+
 # Academic / Paper files
 humanized_paper.tex
 plagiarism_report.tex
 plagiarism_screenshot.png
 references_list.tex
 VaticMacro_Details.pdf
+
+!data/
