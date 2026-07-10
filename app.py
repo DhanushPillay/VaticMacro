@@ -856,15 +856,24 @@ def cockpit():
 # JSON API endpoints for the SPA cockpit
 # ---------------------------------------------------------------------------
 
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok', 'model_loaded': best_model is not None})
+
+
 @app.route('/api/command-center')
 def api_command_center():
     """Return combined dashboard + analysis data as JSON."""
-    dashboard = _build_dashboard_data()
-    analysis = _build_analysis_data()
-    return jsonify({
-        'dashboard': dashboard,
-        'analysis': analysis
-    })
+    try:
+        dashboard = _build_dashboard_data()
+        analysis = _build_analysis_data()
+        return jsonify({
+            'dashboard': dashboard,
+            'analysis': analysis
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/predictive-sandbox', methods=['GET', 'POST'])
