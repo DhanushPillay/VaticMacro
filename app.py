@@ -19,7 +19,24 @@ from sklearn.metrics import r2_score  # type: ignore[reportMissingImports]
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 from feature_engineering import create_features  # type: ignore[reportMissingImports]
 
+import flask.json.provider as _fjp
+
+
+class NumpyEncoder(_fjp.DefaultJSONProvider):
+    """Custom JSON provider that serializes numpy types to native Python types."""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
+
+
 app = Flask(__name__, template_folder='app/templates')
+app.json_provider_class = NumpyEncoder
+app.json = NumpyEncoder(app)
 
 # ---------------------------------------------------------------------------
 # Utility helpers (unchanged from original)
