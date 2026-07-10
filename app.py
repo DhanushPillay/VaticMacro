@@ -25,6 +25,8 @@ import flask.json.provider as _fjp
 class NumpyEncoder(_fjp.DefaultJSONProvider):
     """Custom JSON provider that serializes numpy types to native Python types."""
     def default(self, obj):
+        if isinstance(obj, np.bool_):
+            return bool(obj)
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):
