@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.git/
+.gitignore
+.ruff.toml
+*.pyc
+.idea/
+.vscode/
+*.pdf
+*.tex
+*.png
+notebooks/
+scripts/
+*.bat
+*.ps1
+render.yaml
+docker-compose.yml

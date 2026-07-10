@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: vaticmacro
+    runtime: docker
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: FLASK_HOST
+        value: 0.0.0.0
+      - key: PYTHONUNBUFFERED
+        value: "1"

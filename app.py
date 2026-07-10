@@ -889,4 +889,6 @@ def api_env_status():
 
 if __name__ == '__main__':
     print("Starting VaticMacro Flask Server (no reloader)...")
-    app.run(debug=False, use_reloader=False, host='127.0.0.1', port=5000)
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", os.environ.get("FLASK_PORT", 5000)))
+    app.run(debug=False, use_reloader=False, host=host, port=port)

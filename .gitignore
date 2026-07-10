@@ -34,3 +34,10 @@ env/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Academic / Paper files
+humanized_paper.tex
+plagiarism_report.tex
+plagiarism_screenshot.png
+references_list.tex
+VaticMacro_Details.pdf
