@@ -12,6 +12,7 @@ import numpy as np  # type: ignore[reportMissingImports]
 import os
 import re
 import traceback
+from datetime import datetime
 from pathlib import Path
 from sklearn.metrics import r2_score  # type: ignore[reportMissingImports]
 
@@ -276,7 +277,7 @@ if ENV_MISMATCH_WARNING:
 COLUMN_MAP = {
     'cpi': 'INDCPIALLMINMEI',
     'wpi': 'WPIATT01INM661N',
-    'interest_rate': 'INTDSRINM193N',
+    'interest_rate': 'IRSTCB01INM156N',
     'usd_inr': 'DEXINUS',
     'brent_crude': 'Average of DCOILBRENTEU',
     'industrial_prod': 'INDPRINTO01GYSAM',
@@ -288,6 +289,102 @@ COLUMN_MAP = {
 # Data-computation helper functions
 # Each returns a plain dict — used by both legacy routes and new API routes.
 # ---------------------------------------------------------------------------
+
+def _json_response(payload):
+    """Return a cockpit API response that browsers must not cache."""
+    response = jsonify(payload)
+    response.headers['Cache-Control'] = 'no-store, max-age=0'
+    return response
+
+
+def _build_data_status():
+    """Report merged-data age and the latest observation for each core indicator."""
+    now = pd.Timestamp.now(tz='UTC')
+    result = {
+        'generated_at': now.isoformat(),
+        'dataset_updated_at': None,
+        'latest_observation_date': None,
+        'age_days': None,
+        'status': 'unavailable',
+        'message': 'Dataset is unavailable.',
+        'indicators': [],
+        'model_trained_at': None,
+    }
+    try:
+        data_file = Path(DATA_PATH)
+        if not data_file.exists():
+            return result
+
+        df = pd.read_csv(
+            data_file,
+            usecols=lambda column: column == 'Date' or column in COLUMN_MAP.values(),
+        )
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        df = df.dropna(subset=['Date']).sort_values('Date')
+        if df.empty:
+            result['message'] = 'Dataset contains no valid dates.'
+            return result
+
+        latest_date = pd.Timestamp(df['Date'].max())
+        today = now.tz_localize(None).normalize()
+        age_days = max(0, (today - latest_date.normalize()).days)
+        if latest_date > today + pd.Timedelta(days=1):
+            overall_status = 'future'
+            message = (
+                'Dataset includes future-dated observations; review the source before '
+                'relying on current-status values.'
+            )
+        elif age_days <= 45:
+            overall_status = 'fresh'
+            message = 'Dataset is current for monthly macroeconomic reporting.'
+        elif age_days <= 90:
+            overall_status = 'delayed'
+            message = 'Dataset is delayed; current-status values may miss the latest release.'
+        else:
+            overall_status = 'stale'
+            message = 'Dataset is stale; refresh source data before relying on current-status values.'
+
+        indicators = []
+        for key, column in COLUMN_MAP.items():
+            if column not in df.columns:
+                continue
+            observed_dates = df.loc[df[column].notna(), 'Date']
+            if observed_dates.empty:
+                continue
+            observed_date = pd.Timestamp(observed_dates.max())
+            observed_age = max(0, (today - observed_date.normalize()).days)
+            indicator_status = (
+                'fresh' if observed_age <= 45
+                else 'delayed' if observed_age <= 90
+                else 'stale'
+            )
+            indicators.append({
+                'key': key,
+                'label': key.replace('_', ' ').title(),
+                'observation_date': observed_date.strftime('%Y-%m-%d'),
+                'age_days': observed_age,
+                'status': indicator_status,
+            })
+
+        result.update({
+            'dataset_updated_at': pd.Timestamp(
+                data_file.stat().st_mtime, unit='s', tz='UTC'
+            ).isoformat(),
+            'latest_observation_date': latest_date.strftime('%Y-%m-%d'),
+            'age_days': age_days,
+            'status': overall_status,
+            'message': message,
+            'indicators': indicators,
+        })
+        model_file = Path(MODEL_PATH)
+        if model_file.exists():
+            result['model_trained_at'] = pd.Timestamp(
+                model_file.stat().st_mtime, unit='s', tz='UTC'
+            ).isoformat()
+    except Exception as exc:
+        result['message'] = f'Could not determine data freshness: {exc}'
+    return result
+
 
 def _pct_change(current, past):
     """Calculate percentage change between two values."""
@@ -306,12 +403,10 @@ def _build_dashboard_data():
 
     latest = df.iloc[-1]
 
-    # Monthly change baseline
-    past_30_date = latest['Date'] - pd.Timedelta(days=30)
-    idx_30 = (df['Date'] - past_30_date).abs().idxmin()
-    past_30 = df.loc[idx_30]
+    # Previous month baseline — use 1-period shift (not date proximity)
+    past_30 = df.iloc[-2] if len(df) >= 2 else latest
 
-    # YoY baseline
+    # YoY baseline — find row closest to 12 months prior
     past_365_date = latest['Date'] - pd.Timedelta(days=365)
     idx_365 = (df['Date'] - past_365_date).abs().idxmin()
     past_365 = df.loc[idx_365]
@@ -351,17 +446,17 @@ def _build_dashboard_data():
         peak_inflation = peak_date = low_inflation = low_date = 0
 
     return {
-        'inflation_rate': round(inflation_rate, 2),
-        'inflation_change': round(inflation_change, 2),
-        'cpi_value': round(latest[COLUMN_MAP['cpi']], 2),
-        'cpi_change': round(_pct_change(latest[COLUMN_MAP['cpi']], past_30[COLUMN_MAP['cpi']]), 2),
-        'wpi_value': round(latest[COLUMN_MAP['wpi']], 2),
-        'wpi_change': round(_pct_change(latest[COLUMN_MAP['wpi']], past_30[COLUMN_MAP['wpi']]), 2),
-        'interest_rate': round(latest[COLUMN_MAP['interest_rate']], 2),
-        'usdinr_value': round(latest[COLUMN_MAP['usd_inr']], 2),
-        'usdinr_change': round(_pct_change(latest[COLUMN_MAP['usd_inr']], past_30[COLUMN_MAP['usd_inr']]), 2),
-        'brent_value': round(latest[COLUMN_MAP['brent_crude']], 2),
-        'brent_change': round(_pct_change(latest[COLUMN_MAP['brent_crude']], past_30[COLUMN_MAP['brent_crude']]), 2),
+        'inflation_rate': round(float(inflation_rate), 2),
+        'inflation_change': round(float(inflation_change), 2),
+        'cpi_value': round(float(latest[COLUMN_MAP['cpi']]), 2),
+        'cpi_change': round(float(_pct_change(latest[COLUMN_MAP['cpi']], past_30[COLUMN_MAP['cpi']])), 2),
+        'wpi_value': round(float(latest[COLUMN_MAP['wpi']]), 2),
+        'wpi_change': round(float(_pct_change(latest[COLUMN_MAP['wpi']], past_30[COLUMN_MAP['wpi']])), 2),
+        'interest_rate': round(float(latest[COLUMN_MAP['interest_rate']]), 2),
+        'usdinr_value': round(float(latest[COLUMN_MAP['usd_inr']]), 2),
+        'usdinr_change': round(float(_pct_change(latest[COLUMN_MAP['usd_inr']], past_30[COLUMN_MAP['usd_inr']])), 2),
+        'brent_value': round(float(latest[COLUMN_MAP['brent_crude']]), 2),
+        'brent_change': round(float(_pct_change(latest[COLUMN_MAP['brent_crude']], past_30[COLUMN_MAP['brent_crude']])), 2),
         'avg_inflation': avg_inflation,
         'peak_inflation': peak_inflation,
         'peak_date': peak_date,
@@ -371,10 +466,11 @@ def _build_dashboard_data():
         'num_features': len(FEATURE_COLUMNS) if FEATURE_COLUMNS else len(COLUMN_MAP),
         'num_observations': len(df),
         'date_range': f"{df['Date'].dt.year.min()} - {df['Date'].dt.year.max()}",
-        'inflation_history': {
-            'dates': chart_dates,
-            'values': chart_values
-        }
+        'data_as_of': latest['Date'].strftime('%B %Y'),
+        'inflation_history': [
+            {'date': chart_dates[i], 'value': chart_values[i]}
+            for i in range(len(chart_dates))
+        ],
     }
 
 
@@ -860,22 +956,24 @@ def cockpit():
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok', 'model_loaded': best_model is not None})
+    return _json_response({'status': 'ok', 'model_loaded': best_model is not None, 'data_status': _build_data_status()})
 
 
 @app.route('/api/command-center')
 def api_command_center():
-    """Return combined dashboard + analysis data as JSON."""
+    """Return combined dashboard, analysis, and freshness data as JSON."""
     try:
         dashboard = _build_dashboard_data()
         analysis = _build_analysis_data()
-        return jsonify({
+        return _json_response({
             'dashboard': dashboard,
-            'analysis': analysis
+            'analysis': analysis,
+            'data_status': _build_data_status(),
         })
     except Exception as e:
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        response = _json_response({'error': str(e)})
+        return response, 500
 
 
 @app.route('/api/predictive-sandbox', methods=['GET', 'POST'])
@@ -884,16 +982,18 @@ def api_predictive_sandbox():
     if request.method == 'POST':
         data = request.get_json(silent=True) or request.form.to_dict()
         result = _run_prediction(data)
-        return jsonify(result)
+        result['data_status'] = _build_data_status()
+        return _json_response(result)
 
     # GET — return forecast data and default input values
     forecast = _build_forecast_data()
     display_r2 = HOLDOUT_R2 if HOLDOUT_R2 is not None else (MODEL_R2 if MODEL_R2 is not None else 0.0)
-    return jsonify({
+    return _json_response({
         'forecast': forecast,
         'defaults': _get_dynamic_defaults(),
         'model_name': MODEL_NAME,
-        'model_r2': display_r2
+        'model_r2': display_r2,
+        'data_status': _build_data_status(),
     })
 
 
@@ -901,13 +1001,14 @@ def api_predictive_sandbox():
 def api_model_registry():
     """Return model metrics, feature importances, and chart data as JSON."""
     data = _build_models_data()
-    return jsonify(data)
+    data['data_status'] = _build_data_status()
+    return _json_response(data)
 
 
 @app.route('/api/env-status')
 def api_env_status():
     """Return environment mismatch warning if any."""
-    return jsonify({
+    return _json_response({
         'warning': ENV_MISMATCH_WARNING
     })
 

@@ -315,10 +315,59 @@ input::placeholder {
 
 // Track active Chart.js instances so we can destroy them on view switch
 let activeCharts = [];
+let commandCenterRefreshTimer = null;
+const COMMAND_CENTER_REFRESH_MS = 5 * 60 * 1000;
 
 function destroyCharts() {
   activeCharts.forEach(c => { try { c.destroy(); } catch(e) {} });
   activeCharts = [];
+}
+
+function stopCommandCenterAutoRefresh() {
+  if (commandCenterRefreshTimer) {
+    clearInterval(commandCenterRefreshTimer);
+    commandCenterRefreshTimer = null;
+  }
+}
+
+function dataStatusColor(status) {
+  return { fresh: 'var(--accent-green)', delayed: 'var(--accent-amber)', stale: 'var(--accent-red)', future: 'var(--accent-amber)' }[status] || 'var(--text-muted)';
+}
+
+function dataStatusLabel(status) {
+  return { fresh: 'Data current', delayed: 'Data delayed', stale: 'Data stale', future: 'Data review needed' }[status] || 'Data unavailable';
+}
+
+function formatStatusDate(value) {
+  if (!value) return 'Unavailable';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function updateDataStatusBadge(status) {
+  const badge = document.getElementById('status-badge');
+  if (!badge) return;
+  const color = dataStatusColor(status?.status);
+  badge.textContent = dataStatusLabel(status?.status);
+  badge.title = status?.message || 'No data freshness information is available.';
+  badge.style.color = color;
+  badge.style.borderColor = color;
+}
+
+function renderDataStatus(status, showRefresh) {
+  const color = dataStatusColor(status?.status);
+  const indicators = status?.indicators || [];
+  return `<div class="rounded-xl p-4 mb-4" style="background: var(--bg-card); border: 1px solid ${color};"><div class="flex items-start justify-between gap-4"><div><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[18px]" style="color: ${color};">${status?.status === 'fresh' ? 'check_circle' : 'warning'}</span><p class="text-sm font-semibold" style="color: ${color};">${dataStatusLabel(status?.status)}</p></div><p class="text-xs mt-1" style="color: var(--text-secondary);">${status?.message || 'No data freshness information is available.'}</p><p class="text-[11px] mt-2" style="color: var(--text-muted);">Latest observation: ${status?.latest_observation_date || 'Unavailable'}${Number.isFinite(status?.age_days) ? ` • ${status.age_days} days old` : ''} • Dataset file updated: ${formatStatusDate(status?.dataset_updated_at)}</p></div>${showRefresh ? '<button id="refresh-command-center" class="text-xs px-3 py-2 rounded-lg shrink-0" style="border: 1px solid var(--border-default); color: var(--text-secondary);">Refresh now</button>' : ''}</div>${indicators.length ? `<div class="flex flex-wrap gap-2 mt-3">${indicators.map(indicator => `<span class="text-[11px] px-2 py-1 rounded" style="background: var(--bg-base); color: ${dataStatusColor(indicator.status)}; border: 1px solid var(--border-subtle);">${indicator.label}: ${indicator.observation_date} (${indicator.age_days}d)</span>`).join('')}</div>` : ''}</div>`;
+}
+
+function startCommandCenterAutoRefresh(container) {
+  stopCommandCenterAutoRefresh();
+  commandCenterRefreshTimer = setInterval(() => {
+    if (location.hash === '#command-center' || !location.hash) {
+      destroyCharts();
+      loadCommandCenter(container, true);
+    }
+  }, COMMAND_CENTER_REFRESH_MS);
 }
 
 // Chart.js global defaults for our dark theme
@@ -403,34 +452,55 @@ function inflationZoneColor(val) {
 // VIEW 1: Command Center (Dashboard + Analysis)
 // =========================================================================
 
-async function loadCommandCenter(container) {
+async function loadCommandCenter(container, isRefresh = false) {
   try {
     const data = await fetchJSON('/api/command-center');
     const d = data.dashboard;
     const a = data.analysis;
+    const status = data.data_status;
+
+    // Update badge in header
+    updateDataStatusBadge(status);
+
+    // Start auto-refresh timer
+    if (!isRefresh) {
+      startCommandCenterAutoRefresh(container);
+    }
+
+    // Wire up refresh button
+    setTimeout(() => {
+      const refreshBtn = document.getElementById('refresh-command-center');
+      if (refreshBtn) {
+        refreshBtn.onclick = () => {
+          destroyCharts();
+          loadCommandCenter(container, true);
+        };
+      }
+    }, 100);
 
     container.innerHTML = `
+      ${renderDataStatus(status, true)}
       <!-- KPI Row 1 -->
       <div class="grid grid-cols-4 gap-4 mb-4">
         ${card('Inflation Rate (YoY)', d.inflation_rate + '%',
-               (d.inflation_change >= 0 ? '+' : '') + d.inflation_change + '% from last month',
+               (d.inflation_change >= 0 ? '+' : '') + d.inflation_change + 'pp from last month',
                changeColor(d.inflation_change))}
-        ${card('CPI Index', d.cpi_value,
-               (d.cpi_change >= 0 ? '+' : '') + d.cpi_change + '% monthly',
+        ${card('CPI Index', d.cpi_value + ' <span class="text-[10px] font-normal" style="color: var(--text-muted);">(2015=100, OECD)</span>',
+               (d.cpi_change >= 0 ? '+' : '') + d.cpi_change + '% monthly • Data as of ' + (status?.latest_observation_date || 'Unavailable'),
                changeColor(d.cpi_change))}
         ${card('WPI Index', d.wpi_value,
-               (d.wpi_change >= 0 ? '+' : '') + d.wpi_change + '% monthly',
+               (d.wpi_change >= 0 ? '+' : '') + d.wpi_change + '% monthly • Data as of ' + (status?.latest_observation_date || 'Unavailable'),
                changeColor(d.wpi_change))}
-        ${card('RBI Repo Rate', d.interest_rate + '%', 'Current policy rate', 'var(--text-muted)')}
+        ${card('RBI Repo Rate', d.interest_rate + '%', 'Current policy rate • Data as of ' + (status?.latest_observation_date || 'Unavailable'), 'var(--text-muted)')}
       </div>
 
       <!-- KPI Row 2 -->
       <div class="grid grid-cols-4 gap-4 mb-6">
         ${card('USD/INR', '₹' + d.usdinr_value,
-               (d.usdinr_change >= 0 ? '+' : '') + d.usdinr_change + '%',
+               (d.usdinr_change >= 0 ? '+' : '') + d.usdinr_change + '% • Data as of ' + (status?.latest_observation_date || 'Unavailable'),
                changeColor(d.usdinr_change))}
-        ${card('Brent Crude', '$' + d.brent_value,
-               (d.brent_change >= 0 ? '+' : '') + d.brent_change + '%',
+        ${card('Brent Crude (ICE)', '$' + d.brent_value,
+               (d.brent_change >= 0 ? '+' : '') + d.brent_change + '% • Data as of ' + (status?.latest_observation_date || 'Unavailable'),
                changeColor(d.brent_change))}
         <div class="kpi-card rounded-xl p-5" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" data-indicator="peak">
           <p class="text-[11px] uppercase tracking-wider mb-2" style="color: var(--text-muted);">Peak Inflation</p>
@@ -451,34 +521,122 @@ async function loadCommandCenter(container) {
           <span class="text-xs" style="color: var(--text-muted);">${d.num_observations} observations • ${d.num_features} indicators</span>
         </div>
         <div style="height: 280px;"><canvas id="cc-inflation-chart"></canvas></div>
+        <div class="flex gap-4 mt-3 justify-center" style="font-size: 10px; color: var(--text-muted);">
+          <span><span style="color: #8b95a5;">&#9679;</span> Deflation (&lt;0%)</span>
+          <span><span style="color: #4d8eff;">&#9679;</span> Below target (&lt;2%)</span>
+          <span><span style="color: #4edea3;">&#9679;</span> RBI target band (2-6%)</span>
+          <span><span style="color: #fbbf24;">&#9679;</span> Above target (6-8%)</span>
+          <span><span style="color: #ff6b6b;">&#9679;</span> High inflation (&gt;8%)</span>
+        </div>
       </div>
+`;
 
-      <!-- Correlation + Summary Row -->
-      <div class="grid grid-cols-3 gap-4 mb-6">
-        <!-- Correlation Matrix -->
-        <div class="col-span-2 rounded-xl p-6" style="background: var(--bg-card); border: 1px solid var(--border-subtle);">
-          <h2 class="text-xs uppercase tracking-wider font-medium mb-4" style="color: var(--text-muted);">Feature Correlation Matrix</h2>
-          <div class="overflow-auto">
-            <table class="w-full text-xs" style="color: var(--text-primary);">
-              <thead>
-                <tr style="border-bottom: 1px solid var(--border-subtle);">
-                  <th class="p-2 text-left" style="color: var(--text-muted);">Variable</th>
-                  ${a.features.map(f => `<th class="p-2 text-center" style="color: var(--text-muted); font-size: 10px;">${f.substring(0, 5)}</th>`).join('')}
-                </tr>
-              </thead>
-              <tbody>
-                ${a.features.map((f, i) => {
-                  const row = a.corr_matrix[f] || {};
-                  return `<tr style="${i % 2 === 0 ? '' : 'background: var(--bg-elevated);'}">
-                    <td class="p-2 font-semibold">${f}</td>
-                    ${a.features.map(of => {
-                      const v = row[of] || 0;
-                      const color = v > 0.7 ? 'var(--accent-green)' : (v < -0.3 ? 'var(--accent-red)' : 'var(--text-primary)');
-                      return `<td class="p-2 text-center" style="color: ${color};">${v.toFixed(2)}</td>`;
-                    }).join('')}
-                  </tr>`;
+    // Render chart with legend
+    setTimeout(() => {
+      const ctx = document.getElementById('cc-inflation-chart');
+      if (ctx) {
+        destroyCharts();
+        const pointColors = d.inflation_history.map(i => inflationZoneColor(i.value));
+        activeCharts.push(new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: d.inflation_history.map(i => i.date),
+            datasets: [{
+              label: 'YoY Inflation %',
+              data: d.inflation_history.map(i => i.value),
+              borderColor: 'var(--accent-blue)',
+              backgroundColor: 'rgba(77, 142, 255, 0.1)',
+              fill: true,
+              tension: 0.4,
+              pointRadius: 4,
+              pointBackgroundColor: pointColors,
+              pointBorderColor: pointColors,
+              pointBorderWidth: 0,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                backgroundColor: '#171f28',
+                titleColor: '#8b95a5',
+                bodyColor: '#e4e8ee',
+                borderColor: '#2e3744',
+                borderWidth: 1,
+                callbacks: { label: ctx => ctx.parsed.y + '% YoY' }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: false,
+                min: 0,
+                max: 6,
+                grid: { color: 'var(--border-subtle)' },
+                ticks: { color: 'var(--text-secondary)', font: { size: 10 }, callback: v => v + '%' }
+              },
+              x: {
+                grid: { color: 'var(--border-subtle)' },
+                ticks: { color: 'var(--text-secondary)', font: { size: 10 }, maxTicksLimit: 12 }
+              }
+            }
+          }
+        }));
+      }
+    }, 100);
+
+    // Render correlation matrix
+    setTimeout(() => {
+      const table = document.querySelector('.col-span-2 table');
+      if (table) {
+        table.innerHTML = `
+          <thead>
+            <tr style="border-bottom: 1px solid var(--border-subtle);">
+              <th class="p-2 text-left" style="color: var(--text-muted);">Variable</th>
+              ${a.features.map(f => `<th class="p-2 text-center" style="color: var(--text-muted); font-size: 10px;">${f.substring(0, 5)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${a.features.map((f, i) => {
+              const row = a.corr_matrix[f] || {};
+              return `<tr style="${i % 2 === 0 ? '' : 'background: var(--bg-elevated);'}">
+                <td class="p-2 font-semibold">${f}</td>
+                ${a.features.map(of => {
+                  const v = row[of] || 0;
+                  const color = v > 0.7 ? 'var(--accent-green)' : (v < -0.3 ? 'var(--accent-red)' : 'var(--text-primary)');
+                  return `<td class="p-2 text-center" style="color: ${color};">${v.toFixed(2)}</td>`;
                 }).join('')}
-              </tbody>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        `;
+      }
+    }, 200);
+
+    // Render stationarity tests
+    setTimeout(() => {
+      const testsDiv = document.getElementById('stationarity-tests');
+      if (testsDiv) {
+        testsDiv.innerHTML = `
+          <div class="grid grid-cols-2 gap-4">
+            ${a.stationarity.map(test => `
+              <div class="rounded-lg p-4" style="background: var(--bg-elevated); border: 1px solid var(--border-subtle);">
+                <p class="text-xs font-semibold mb-1" style="color: var(--text-primary);">${test.feature}</p>
+                <p class="text-[10px]" style="color: var(--text-secondary);">ADF stat: ${test.stat.toFixed(4)} | p-value: ${test.pvalue.toFixed(4)}</p>
+                <p class="text-[10px] mt-1" style="color: ${test.is_stationary ? 'var(--accent-green)' : 'var(--accent-red)'};">${test.is_stationary ? '✓ Stationary' : '✗ Non-stationary'}</p>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+    }, 300);
+
+  } catch (error) {
+    console.error('Error loading Command Center:', error);
+    container.innerHTML = `<div class="text-center py-12"><p class="text-red-400">Error loading data: ${error.message}</p></div>`;
+  }
+}
             </table>
           </div>
         </div>

@@ -8,3 +8,13 @@ services:
         value: 0.0.0.0
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: FRED_API_KEY
+        value: "REDACTED"
+
+crons:
+  - name: daily-fx-brent-refresh
+    schedule: "0 6 * * *"
+    command: "python src/scheduler.py"
+  - name: monthly-cpi-wpi-rate-refresh
+    schedule: "0 6 5 * *"
+    command: "python src/scheduler.py"
