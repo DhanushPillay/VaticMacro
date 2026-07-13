@@ -9,7 +9,7 @@ services:
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: FRED_API_KEY
-        value: "REDACTED"
+        sync: false
 
 crons:
   - name: daily-fx-brent-refresh

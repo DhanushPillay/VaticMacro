@@ -24,7 +24,7 @@ FRED_BASE_URL = 'https://api.stlouisfed.org/fred/series/obs'
 SERIES = {
     'cpi': 'INDCPIALLMINMEI',
     'wpi': 'WPIATT01INM661N',
-    'rate': 'IRSTCB01INM156N',
+    'rate': 'INTDSRINM193N',
     'fx': 'DEXINUS',
     'brent': 'DCOILBRENTEU',
 }

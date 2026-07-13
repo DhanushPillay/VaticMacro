@@ -277,7 +277,7 @@ if ENV_MISMATCH_WARNING:
 COLUMN_MAP = {
     'cpi': 'INDCPIALLMINMEI',
     'wpi': 'WPIATT01INM661N',
-    'interest_rate': 'IRSTCB01INM156N',
+    'interest_rate': 'INTDSRINM193N',
     'usd_inr': 'DEXINUS',
     'brent_crude': 'Average of DCOILBRENTEU',
     'industrial_prod': 'INDPRINTO01GYSAM',
