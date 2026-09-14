@@ -75,7 +75,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=src --cov=app --cov-fail-under=50 -q"
+addopts = "--cov=src --cov=app --cov-fail-under=80 -q"
 pythonpath = ["."]
 
 [tool.coverage.run]

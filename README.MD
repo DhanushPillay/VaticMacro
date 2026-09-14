@@ -1,335 +1,217 @@
 # VaticMacro
 
-## Indian Macroeconomic Inflation Prediction and Trend Forecasting
+## Indian CPI Inflation Forecasting
 
-VaticMacro is an advanced machine learning framework explicitly architected for the Indian economy. It is designed to forecast inflation trends through the rigorous analysis of domestic macroeconomic indicators, global market dynamics, and regional policy metrics. The system employs complex data analytics, statistical modeling, and predictive forecasting techniques to yield precise inflation estimates and actionable economic insights tailored to the Indian subcontinent.
+VaticMacro forecasts Indian Year-over-Year CPI inflation one month ahead from five macro indicators. It uses a monthly panel (2000-2026, 317 observations) with 30 engineered features and a regularized linear model that outperforms a naive baseline on an out-of-sample holdout.
 
-This platform empowers domestic policy-makers, researchers, institutional investors, and financial analysts to comprehensively evaluate regional inflation paradigms, assess macroeconomic risks within emerging markets, and execute data-driven strategic decisions based on empirical economic projections.
-
-## Status — FAANG-hardened (2026-09-14)
-
-- **Stack:** Python 3.12 (`requires-python >=3.12,<3.15`), Flask 3.1 + Gunicorn 22, Pandas 2.2, scikit-learn 1.5, XGBoost 2.1, LightGBM 4.5, Pydantic 2.8 + Pandera 0.20 — single source `pyproject.toml`, `requirements-strict.txt` (15 libs, hatch build)
-- **Data truth:** 317 monthly rows (2000-01-31 → 2026-05-31), 6 core indicators (`INDCPIALLMINMEI`, `WPIATT01INM661N`, `INTDSRINM193N`, `DEXINUS`, `DCOILBRENTEU`, `Date`), 30 engineered features (lags/rolling/momentum, clipped ±50%, `src/feature_engineering.py:12` `FEATURE_COLUMNS`), target YoY CPI `INDCPIALLMINMEI`
-- **Benchmarks (live 2026-09-14, `benchmarks/`):** `bench_holdout.py` Ridge CV R² 0.588 | Holdout R² 0.543 MAE 0.556 RMSE 0.738 vs Naive MAE 0.654 — **PASS**; `bench_cv.py` `create_features` 293 rows × 32 cols in 20.5 ms — **PASS** (<250 ms); `bench_latency.py` sandbox p50 0.2 ms p95 49.0 ms — **PASS** (<100 ms)
-- **Quality gates:** `pytest -q` 25 tests 56% coverage (`--cov-fail-under=50`), `ruff check` 0, `ruff format --check` 28 files, `mypy src app` 0 errors (16 files), Pydantic validation 422 on `±50` overflow, `GET /health` 200 `model_loaded:true`
-- **Prod:** `Dockerfile` `python:3.12-slim` non-root `appuser` + `HEALTHCHECK` `http://localhost:10000/health`, `render.yaml` `healthCheckPath: /health` + `REFRESH_TOKEN` protects `POST /api/refresh`, cron `daily` FX/Brent + `monthly` CPI/WPI/Rate, RBI fallback `src/data_refresh.py:fetch_rbi_dbie_series`
-- **Docs sync:** `docs/ARCHITECTURE.md` + `docs/DATA_DICTIONARY.md` updated to 317×6 monthly truth
+Designed for policy teams, researchers, investors, and students who need reproducible inflation estimates for the Indian economy.
 
 ---
 
-# Problem and Solution
+## System Overview
 
-## Problem Statement
+```mermaid
+flowchart LR
+    FRED[FRED Series\nCPI WPI Rate FX Brent] --> REFRESH[src/data_refresh.py\nfetch + RBI fallback]
+    RBI[RBI DBIE\nWPI fallback] --> REFRESH
+    REFRESH --> MERGED[data/inflation_dataset.csv\n317 x 6 monthly ME]
+    MERGED --> FEAT[src/feature_engineering.py\n30 features clipped ±50]
+    FEAT --> TRAIN[src/train_model.py\n7 candidates TSSplit5]
+    TRAIN --> MODEL[models/best_model.pkl\n+ metrics.json + holdout.csv]
+    MODEL --> API[Flask app + factory\n/health sandbox refresh]
+    API --> UI[app/templates/cockpit.html\nCommand Center SPA]
+```
 
-Inflation serves as a critical barometer of macroeconomic health, exerting profound effects on purchasing power, capital allocation, municipal policy formulation, and corporate financial strategy.
-
-The accurate prediction of intra- and inter-period inflation is a multifaceted challenge, largely due to its dependency on a vast array of interconnected systemic factors, which include:
-
-- Consumer Price Index (CPI)
-- Wholesale Price Index (WPI)
-- Benchmark Interest Rates
-- Gross Domestic Product (GDP) Growth Trajectories
-- Unemployment Metrics
-- Foreign Exchange Rate Volatility
-- Commodity and Energy Valuations
-- Aggregate Money Supply
-
-Conventional forecasting paradigms often fail to discern non-linear or emergent patterns within voluminous economic datasets and frequently lack the agility required to model dynamic macroeconomic shifts.
-
-As global economies grow increasingly interconnected, the necessity for robust, data-driven analytical solutions capable of parsing multivariate economic indicators to synthesize dependable inflation forecasts has become paramount.
-
----
-
-## The VaticMacro Methodology
-
-VaticMacro centralizes the complex process of economic trend analysis and inflation projection.
-
-The framework systematically:
-
-- Aggregates and normalizes historical macroeconomic data.
-- Quantifies correlations and causal relationships among primary economic indicators.
-- Implements advanced machine learning topologies to forecast inflation velocity.
-- Renders multi-dimensional economic patterns through comprehensive visual dashboards.
-- Validates predictive efficacy utilizing industry-standard statistical evaluation metrics.
-- Synthesizes complex outputs into actionable strategic intelligence.
-
-By translating dense economic datasets into coherent predictive models, VaticMacro provides stakeholders with the requisite intelligence to anticipate future macroeconomic conditions and formulate rigorous strategic responses.
+```mermaid
+sequenceDiagram
+    participant S as scheduler.py
+    participant R as data_refresh
+    participant D as inflation_dataset.csv
+    participant T as train_model
+    participant A as Flask API
+    S->>R: daily FX/Brent or monthly CPI/WPI/Rate (FRED_API_KEY)
+    R->>D: merge_and_save outer join + ME resample
+    R->>R: log_refresh append data/refresh_log.json
+    T->>D: create_features 30 cols + target shift -1
+    T->>T: TimeSeriesSplit5 GridSearchCV r2
+    T->>A: save best_model.pkl feature_columns environment
+    A->>A: GET /health + POST /api/predictive-sandbox (Pydantic 422 if |val|>50)
+```
 
 ---
 
-# Core Capabilities
+## Problem and Solution
 
-## Economic Data Analysis
+Inflation reflects purchasing power, rates, and policy space. Predicting it is hard because it depends on linked factors: CPI level, wholesale prices, policy rates, exchange rates, and energy prices. Levels drift across decades, daily forward-fills create false confidence, and small samples overfit tree models.
 
-- Historical inflation trend aggregation
-- Economic indicator benchmarking and comparison
-- Multivariate correlation analysis
-- Rigorous data preprocessing and normalization
-- Advanced feature engineering and selection
-
----
-
-## Machine Learning Forecasting
-
-- Inflation trajectory prediction utilizing historical datasets
-- Predictive modeling via ensemble and linear methodologies
-- Time-series statistical forecasting
-- Macroeconomic trend extrapolation
-- Forward-looking inflation estimation
-
-Supported Methodologies:
-
-- Linear Regression
-- Random Forest Regressor
-- XGBoost Regressor
-- ARIMA (AutoRegressive Integrated Moving Average)
+VaticMacro addresses this with:
+- Monthly truth without duplication (no daily forward-fill)
+- Scale-stationary features (YoY and MoM percent changes, ratios)
+- Autoregressive lags as the main signal (lag-1 autocorr > 0.99)
+- Time-series validation without leakage (`TimeSeriesSplit`, holdout 2024-07 onward)
+- A single deployable artifact with environment provenance
 
 ---
 
-## Data Visualization
+## Dataset
 
-- Programmatic rendering of inflation trend trajectories
-- Forecast divergence and comparison graphing
-- Empirical correlation heatmaps
-- Macroscopic economic indicator dashboards
-- Diagnostic visual insight generation
+**File:** `data/inflation_dataset.csv` — 317 monthly rows, 2000-01-31 to 2026-05-31, 6 columns. Also mirrored in `Data/` for legacy compatibility. Validated by `src/schemas.py` (pandera) and `src/config.py` (frozen `SETTINGS`).
 
----
+| Column | Meaning | Source | Frequency |
+|---|---|---|---|
+| `Date` | Month end | — | Monthly |
+| `INDCPIALLMINMEI` | Consumer Price Index (2015=100), YoY target | FRED | Monthly |
+| `WPIATT01INM661N` | Wholesale Price Index industry | FRED + RBI DBIE fallback | Monthly |
+| `INTDSRINM193N` | RBI repo rate | FRED | Monthly |
+| `DEXINUS` | USD/INR | FRED | Daily → `ME` |
+| `Average of DCOILBRENTEU` | Brent ICE USD/barrel | FRED | Daily → `ME` |
 
-## Performance Evaluation
+Target is not stored: `inflation_yoy = (CPI_t - CPI_{t-12}) / CPI_{t-12} * 100`, `target_future = current_yoy.shift(-1)`.
 
-Algorithmic performance is rigorously validated utilizing:
+Refresh: `src/data_refresh.py` `fetch_all_sources(cadence)` with daily (FX/Brent) and monthly (CPI/WPI/Rate) cadence via `src/scheduler.py`; logs to `data/refresh_log.json`. RBI fallback `fetch_rbi_dbie_series` never raises. See `docs/DATA_DICTIONARY.md` for full dictionary and merge steps.
 
-- Mean Absolute Error (MAE)
-- Root Mean Squared Error (RMSE)
-- Mean Squared Error (MSE)
-- Coefficient of Determination (R² Score)
-
-This methodology ensures maximum fidelity and statistical reliability in all generated forecasts.
+**Engineered features:** 30 columns from `src/feature_engineering.py:FEATURE_COLUMNS` — calendar sin/cos, 7 AR lags + acceleration, MoM/YoY and 6-month rolling for each of WPI/Rate/FX/Brent, plus `WPI_CPI_ratio`, `oil_inr_ratio`, spreads and volatility. All pct/lag columns clipped `±50`. Output is about 293 × 32 after `dropna`. See `docs/DATA_DICTIONARY.md#engineered-features`.
 
 ---
 
-# Technical Architecture
+## Model and Benchmarks
 
-## Backend and Development Environment
+Seven candidates run the same pipeline `VarianceThreshold → SelectKBest → RobustScaler → estimator` with `GridSearchCV` on `r2`:
 
-- Python 3.12 (`requires-python >=3.12,<3.15`, `hatchling` build) — `Dockerfile` `python:3.12-slim` + Gunicorn 22, Flask 3.1
-- `pyproject.toml` single source (15 deps) + `requirements-strict.txt` pinned via `generate_strict_env.py`, `.pre-commit-config.yaml` (ruff/mypy)
+- Ridge, Ridge with mutual information, ElasticNet, Ridge with polynomial features, Random Forest, XGBoost, LightGBM
 
-## Data Processing Libraries
+Ridge wins on 216 training months. Artifact: `models/best_model.pkl` `{pipeline, feature_columns, model_name, environment}` + `models/metrics.json` + `models/holdout.csv` (22 rows 2024-07 → 2026-05). Helpers `compute_metrics` and `naive_baseline_mae` in `src/train_model.py` are the single source for scores.
 
-- Pandas 2.2 + NumPy 1.26 + Pandera 0.20 (`src/schemas.py` `InflationDatasetSchema`)
+### Results (2026-09-14, `benchmarks/`)
 
-## Data Visualization Modules
+| Benchmark | Metric | Result | Threshold | Status |
+|---|---|---|---|---|
+| `bench_holdout.py` | CV R² (Ridge, 5-fold TSSplit) | 0.588 | — | — |
+| `bench_holdout.py` | Holdout R² | 0.543 | > 0.30 | Pass |
+| `bench_holdout.py` | Holdout MAE | 0.556 | < naive 0.654 | Pass |
+| `bench_holdout.py` | Holdout RMSE | 0.738 | — | — |
+| `bench_holdout.py` | Naive persistence MAE | 0.654 | — | — |
+| `bench_cv.py` | `create_features` 293 rows × 32 cols | 20.5 ms | < 250 ms | Pass |
+| `bench_latency.py` | Predictive sandbox p50 | 0.2 ms | — | — |
+| `bench_latency.py` | Predictive sandbox p95 | 49.0 ms | < 100 ms | Pass |
 
-- Matplotlib 3.8 + Seaborn 0.13 + Statsmodels 0.14
-
-## Machine Learning and Forecasting Implementations
-
-- Scikit-learn 1.5 + XGBoost 2.1 + LightGBM 4.5 + Ridge ensemble (`src/train_model.py:compute_metrics`, `naive_baseline_mae`, `_capture_environment`)
-- 7 candidates: Ridge / MI / Poly / ElasticNet / RandomForest / LightGBM / XGBoost — best saved `models/ridge.pkl` + `metrics.json` + `holdout.csv`
-
-## Analytical Methodologies
-
-- 30 FEATURE_COLUMNS clipped ±50% (`src/feature_engineering.py:12`), monthly resample `ME`, Pydantic `SandboxRequest` validation 422
-
----
-
-# Dataset Characteristics
-
-Monthly truth — 317 rows (2000-01-31 → 2026-05-31), 6 columns, resampled `ME` (no daily duplication). Validated by `src/schemas.py:InflationDatasetSchema` + `src/config.py:SETTINGS` frozen dataclass.
-
-### Primary Core Indicators (raw `data/inflation_dataset.csv`)
-- Indian CPI `INDCPIALLMINMEI` [Monthly, FRED, target YoY `pct_change(12)*100`]
-- WPI Industry `WPIATT01INM661N` [Monthly, FRED + RBI DBIE fallback `src/data_refresh.py:fetch_rbi_dbie_series`]
-- RBI Rate `INTDSRINM193N` [Monthly, FRED]
-- FX `DEXINUS` USD/INR [Daily → monthly `ME`]
-- Brent `DCOILBRENTEU` / `Average of DCOILBRENTEU` [Daily → monthly]
-
-### Derived Target & Features
-- **Target:** `INDCPIALLMINMEI` YoY % (monthly, shift 12)
-- **30 engineered features** (`src/feature_engineering.py:FEATURE_COLUMNS`) — lags 1/3/6/12, rolling mean/std, momentum, pct_change, clipped `±50%`, `RobustScaler` + `VarianceThreshold` + `SelectKBest` in `train_model.py`
-- **Refresh:** `src/data_refresh.py:merge_and_save` + `log_refresh` + `fetch_all_sources` cadence `daily` (FX/Brent) / `monthly` (CPI/WPI/Rate), `src/scheduler.py` checks `FRED_API_KEY`
-
-### Phase II Extensibility
-Future: Unemployment annual, India Basket Crude, M1/M3 — plaintiffs kept out of core 30 to avoid leakage; add when monthly proxy available.
+Evaluation uses `MAE`, `RMSE`, `R²`. Full reproduction steps and per-model CV table in `docs/BENCHMARKS.md`.
 
 ---
 
-# Project Workflow
-
-## 1. Data Aggregation
-Systematic collection of historical macroeconomic and inflation-related datasets from authoritative public and institutional financial sources.
-
-## 2. Data Preprocessing Pipeline
-- **Time-Series Frequency Alignment:** Algorithmic downsampling of Daily data (Exchange Rates) and interpolation of Annual data (GDP) to synthesize a unified Monthly frequency matrix.
-- Mitigation and imputation of null values.
-- Comprehensive data sanitization.
-- Algorithmic outlier detection and handling.
-- Statistical data normalization.
-- Predictive feature selection strategies.
-
-## 3. Exploratory Data Analysis (EDA)
-
-- Empirical trend identification and smoothing
-- Statistical distribution variance analysis
-- Bivariate and multivariate correlation mapping
-- Discovery of latent macroeconomic patterns
-
-## 4. Feature Engineering
-
-- Synthesis of derived analytical variables
-- Optimization of critical economic indicators
-- Algorithmic dataset dimensionality reduction
-
-## 5. Model Architecture and Training
-
-Training of diverse forecasting algorithms, including:
-
-- Linear Regression
-- Random Forest Ensembles
-- XGBoost Architectures
-- ARIMA Time-Series Models
-
-## 6. Model Evaluation and Validation
-
-Rigorous evaluation of predictive fidelity utilizing:
-
-- Mean Absolute Error (MAE)
-- Root Mean Squared Error (RMSE)
-- Mean Squared Error (MSE)
-- Coefficient of Determination (R² Score)
-
-## 7. Predictive Generation
-
-Generate future inflation forecasts and economic trend predictions.
-
----
-
-# Project Structure
+## Project Structure
 
 ```text
 VaticMacro/
 ├── app/
-│   ├── factory.py (FAANG factory `create_app` — /health + /api/predictive-sandbox Pydantic 422)
-│   ├── blueprints/{health,api,views}.py
-│   ├── services/schemas.py (SandboxRequest clipped ±50)
-│   └── templates/cockpit.html (1243-line SPA — skip-link, prefers-reduced-motion, data-testid)
+│   ├── factory.py              # create_app — /health + POST /api/predictive-sandbox (Pydantic, 422 if |val|>50)
+│   ├── blueprints/             # health/api/views
+│   ├── services/schemas.py     # SandboxRequest
+│   └── templates/cockpit.html  # hash-router SPA, Chart.js, a11y skip-link + prefers-reduced-motion
 ├── src/
-│   ├── config.py (frozen SETTINGS dataclass)
-│   ├── schemas.py (Pandera InflationDatasetSchema)
-│   ├── preprocessing.py (Daily→ME resample, pivot/year variants)
-│   ├── feature_engineering.py (30 FEATURE_COLUMNS, clipping)
-│   ├── train_model.py (compute_metrics/naive_baseline_mae/_capture_environment, 7 candidates, mlflow hook)
-│   ├── data_refresh.py (RBI fallback, merge_and_save, log_refresh, fetch_all_sources)
-│   └── scheduler.py (FRED_API_KEY check, daily/monthly cadence)
-├── benchmarks/{bench_holdout,bench_cv,bench_latency}.py (holdout R² 0.543 MAE 0.556 vs naive 0.654)
-├── tests/{unit,contracts,integration}/ (25 tests, 56% cov --cov-fail-under=50)
-├── data/inflation_dataset.csv (317×6 monthly truth — also Data/ legacy copy)
-├── models/{ridge,lightgbm,xgboost,best_model}.pkl + metrics.json + holdout.csv
-├── docs/{ARCHITECTURE,DATA_DICTIONARY,GETTING_STARTED}.md (monthly truth)
-├── pyproject.toml (single source, requires-python >=3.12,<3.15) + requirements-strict.txt
-├── Dockerfile (3.12-slim, non-root, HEALTHCHECK 10000/health) + render.yaml + docker-compose.yml
-└── app.py / merge_data.py / run_train.py (legacy entrypoints — prefer factory + src/)
+│   ├── config.py               # frozen SETTINGS (COLUMN_MAP, paths)
+│   ├── schemas.py              # pandera InflationDatasetSchema
+│   ├── preprocessing.py        # heterogeneous CSV → observation_date + ME resample
+│   ├── feature_engineering.py  # 30 FEATURE_COLUMNS, clipping
+│   ├── train_model.py          # 7 candidates, compute_metrics, capture_environment
+│   ├── data_refresh.py         # FRED fetch + RBI fallback, merge_and_save, log_refresh
+│   └── scheduler.py            # cadence runner
+├── benchmarks/                 # bench_holdout / bench_cv / bench_latency
+├── tests/                      # unit + contracts + integration (25 tests, 56% coverage)
+├── data/inflation_dataset.csv  # 317×6 monthly truth
+├── models/                     # best_model.pkl, metrics.json, holdout.csv + per-model pkl
+├── docs/                       # ARCHITECTURE, DATA_DICTIONARY, BENCHMARKS, GETTING_STARTED
+├── pyproject.toml              # Python 3.12, single source deps
+├── requirements-strict.txt     # pinned 15 libs
+├── Dockerfile + docker-compose.yml + render.yaml  # 3.12-slim non-root, HEALTHCHECK :10000/health
+└── app.py / merge_data.py / run_train.py  # legacy entrypoints
 ```
 
----
-
-# Expected Operational Outcomes
-
-The execution of the framework yields:
-
-- Quantifiable future inflation projections
-- Formulated economic trend predictions
-- Empirical indicator importance metrics
-- Robust forecast accuracy analytics
-- Synthesized, graphical economic intelligence
+Detailed architecture, dependencies, and routes in `docs/ARCHITECTURE.md`.
 
 ---
 
-# Applied Use Cases
+## Getting Started
 
-VaticMacro is architected to facilitate:
+Prerequisites: Python 3.12, `pip`.
 
-### Government and Policy Planning
-Supports macroeconomic stabilization strategies and empirical policy formulation.
-
-### Financial Institutions
-Assists banking and regulatory organizations in extensive systemic risk assessment and operational forecasting.
-
-### Investment Analysis
-Offers institutional investors quantifiable data regarding future macroeconomic climates.
-
-### Strategic Corporate Planning
-Supports rigorous budgeting, pricing models, and structural strategic allocations.
-
-### Academic Research
-Serves as an empirical foundation for advanced economic and temporal forecasting research initiatives.
-
----
-
-# Future Development Horizons
-
-- **Continuous Integration:** Integration of live, real-time macroeconomic datasets via API pipelines.
-- **Hybrid Architectures:** Implementation of dual-model ensembles, matching statistical baseline algorithms like ARIMA with advanced non-linear deep learning (e.g., ARIMA-LSTM).
-- **Time-Series Transformers:** Application of state-of-the-art Temporal Fusion Transformers (TFT) equipped with attention mechanics for superior multi-horizon extrapolation.
-- **Alternative Behavioral Data:** Integration of Natural Language Processing (NLP) models to ingest and execute sentiment analysis on Central Bank minutes and macroeconomic news indicators.
-- **Interactive Dashboards:** Implementation of dynamic, interactive forecasting suites.
-- **Granularity:** Region-specific and localized inflation metrics.
-- **Scale:** Expansion into cross-border, multi-national macroeconomic modeling.
-
----
-
-# Research Contributors
-
-- Dhanush Pillay & Shubhangini Dixit
-
----
-
-# Licensing
-
-This repository and framework are published explicitly for academic, research, and non-commercial educational purposes.
-
----
-
-## Running locally (Windows 3.12)
-
-**Install (single source):**
 ```powershell
-python -m pip install -e ".[dev]"        # or: pip install -r requirements-strict.txt
+git clone https://github.com/DhanushPillay/VaticMacro.git
+cd VaticMacro
+python -m venv .venv; .\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
 pre-commit install
 ```
 
-**Quality gates (must pass):**
+Verify:
+
 ```powershell
-ruff check .; ruff format --check .; mypy src app   # 0 errors, 28 files
-pytest -q                                            # 25 passed, 56% cov (gate 50)
-python benchmarks/bench_holdout.py   # Ridge CV 0.588 | Holdout R2 0.543 MAE 0.556 vs naive 0.654 PASS
-python benchmarks/bench_cv.py        # 20.5 ms PASS
-python benchmarks/bench_latency.py   # p95 49 ms PASS
+ruff check .; ruff format --check .; mypy src app
+pytest -q
+python benchmarks/bench_holdout.py
+python benchmarks/bench_cv.py
+python benchmarks/bench_latency.py
 ```
 
-**App (factory, 10000):**
+Run app (factory serves on 10000, legacy `app.py` also works):
+
 ```powershell
-python -m pip install -r requirements.txt   # legacy compat
-python app.py                      # legacy SPA (still works)
-# or factory:
-$gunicorn app:app --bind 0.0.0.0:10000 --workers 2 --preload   # Dockerfile CMD
-# health + sandbox smoke:
+python app.py
+# health + sandbox
 curl http://127.0.0.1:10000/health
 curl -X POST http://127.0.0.1:10000/api/predictive-sandbox -H "Content-Type: application/json" -d "{\"WPIATT01INM661N_pct_1m\":10}"
-# 422 on bad: {"WPIATT01INM661N_pct_1m":60}
+# 422 example
+curl -X POST http://127.0.0.1:10000/api/predictive-sandbox -H "Content-Type: application/json" -d "{\"WPIATT01INM661N_pct_1m\":60}"
 ```
 
-**Docker / Render:**
+Docker:
+
 ```powershell
 docker build -t vaticmacro:test .
 docker run -p 10000:10000 -e FRED_API_KEY=xxx -e REFRESH_TOKEN=yyy vaticmacro:test
 docker compose up --build
 ```
 
-**Windows quick start (legacy scripts):**
-```powershell
-powershell -ExecutionPolicy Bypass -File start.ps1
-# or: start.bat
-```
+Windows helpers: `start.ps1` / `start.bat`. Step-by-step in `docs/GETTING_STARTED.md`.
+
+---
+
+## Workflow
+
+1. **Collect** — FRED series `INDCPIALLMINMEI`, `WPIATT01INM661N`, `INTDSRINM193N`, `DEXINUS`, `DCOILBRENTEU`; RBI fallback for WPI.
+2. **Preprocess** — handle `observation_date`, `Row Labels`, `Year/Month` pivots; filter dates; `ME` resample.
+3. **Feature engineer** — 30 features, clip, drop raw cols.
+4. **Train** — `TimeSeriesSplit(5)`, pick best CV `r2`.
+5. **Evaluate** — holdout `R²/MAE/RMSE` vs naive.
+6. **Serve** — Flask SPA, `/api/command-center`, `/api/model-registry`, `/api/predictive-sandbox`, `/api/refresh` (token protected).
+
+---
+
+## Use Cases
+
+- **Policy** — near-term inflation scenarios for rate decisions.
+- **Finance** — risk and budgeting with out-of-sample error bands.
+- **Research** — monthly panel for Indian inflation studies.
+
+---
+
+## Future Work
+
+- Hybrid ARIMA-LSTM and time-series transformers for multi-horizon forecasts.
+- NLP on RBI minutes and news for expectations.
+- Region-specific price indices and cross-border panels.
+- Live API refresh already in place via scheduler and `POST /api/refresh`.
+
+---
+
+## Contributors
+
+- Dhanush Pillay & Shubhangini Dixit
+
+## License
+
+Academic and non-commercial educational use.
+
+## Acknowledgments
+
+FRED (Federal Reserve Bank of St. Louis), RBI DBIE, OECD. Model artifacts store `environment` versions for provenance.

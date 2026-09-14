@@ -256,6 +256,8 @@ def merge_and_save(cpi_df, wpi_df, rate_df, fx_df, brent_df):
     brent_df = brent_df.rename(
         columns={"date": "Date", "value": "Average of DCOILBRENTEU"}
     )
+    for _df in (cpi_df, wpi_df, rate_df, fx_df, brent_df):
+        _df["Date"] = pd.to_datetime(_df["Date"])
     merged = cpi_df[["Date", "INDCPIALLMINMEI"]]
     merged = merged.merge(wpi_df[["Date", "WPIATT01INM661N"]], on="Date", how="outer")
     merged = merged.merge(rate_df[["Date", "INTDSRINM193N"]], on="Date", how="outer")
