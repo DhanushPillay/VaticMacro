@@ -56,3 +56,11 @@ coverage.xml
 uv.lock
 mlruns/
 benchmarks/.benchmarks/
+
+# Opencode agent artifacts
+.opencode/
+
+# Generated runtime logs
+data/refresh_log.json
+refresh_log.json
+**/refresh_log.json
