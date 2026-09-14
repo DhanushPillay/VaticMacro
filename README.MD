@@ -6,6 +6,15 @@ VaticMacro is an advanced machine learning framework explicitly architected for 
 
 This platform empowers domestic policy-makers, researchers, institutional investors, and financial analysts to comprehensively evaluate regional inflation paradigms, assess macroeconomic risks within emerging markets, and execute data-driven strategic decisions based on empirical economic projections.
 
+## Status — FAANG-hardened (2026-09-14)
+
+- **Stack:** Python 3.12 (`requires-python >=3.12,<3.15`), Flask 3.1 + Gunicorn 22, Pandas 2.2, scikit-learn 1.5, XGBoost 2.1, LightGBM 4.5, Pydantic 2.8 + Pandera 0.20 — single source `pyproject.toml`, `requirements-strict.txt` (15 libs, hatch build)
+- **Data truth:** 317 monthly rows (2000-01-31 → 2026-05-31), 6 core indicators (`INDCPIALLMINMEI`, `WPIATT01INM661N`, `INTDSRINM193N`, `DEXINUS`, `DCOILBRENTEU`, `Date`), 30 engineered features (lags/rolling/momentum, clipped ±50%, `src/feature_engineering.py:12` `FEATURE_COLUMNS`), target YoY CPI `INDCPIALLMINMEI`
+- **Benchmarks (live 2026-09-14, `benchmarks/`):** `bench_holdout.py` Ridge CV R² 0.588 | Holdout R² 0.543 MAE 0.556 RMSE 0.738 vs Naive MAE 0.654 — **PASS**; `bench_cv.py` `create_features` 293 rows × 32 cols in 20.5 ms — **PASS** (<250 ms); `bench_latency.py` sandbox p50 0.2 ms p95 49.0 ms — **PASS** (<100 ms)
+- **Quality gates:** `pytest -q` 25 tests 56% coverage (`--cov-fail-under=50`), `ruff check` 0, `ruff format --check` 28 files, `mypy src app` 0 errors (16 files), Pydantic validation 422 on `±50` overflow, `GET /health` 200 `model_loaded:true`
+- **Prod:** `Dockerfile` `python:3.12-slim` non-root `appuser` + `HEALTHCHECK` `http://localhost:10000/health`, `render.yaml` `healthCheckPath: /health` + `REFRESH_TOKEN` protects `POST /api/refresh`, cron `daily` FX/Brent + `monthly` CPI/WPI/Rate, RBI fallback `src/data_refresh.py:fetch_rbi_dbie_series`
+- **Docs sync:** `docs/ARCHITECTURE.md` + `docs/DATA_DICTIONARY.md` updated to 317×6 monthly truth
+
 ---
 
 # Problem and Solution
@@ -104,56 +113,46 @@ This methodology ensures maximum fidelity and statistical reliability in all gen
 
 ## Backend and Development Environment
 
-- Python 3.10+
-- Jupyter Notebook Framework
+- Python 3.12 (`requires-python >=3.12,<3.15`, `hatchling` build) — `Dockerfile` `python:3.12-slim` + Gunicorn 22, Flask 3.1
+- `pyproject.toml` single source (15 deps) + `requirements-strict.txt` pinned via `generate_strict_env.py`, `.pre-commit-config.yaml` (ruff/mypy)
 
 ## Data Processing Libraries
 
-- Pandas
-- NumPy
+- Pandas 2.2 + NumPy 1.26 + Pandera 0.20 (`src/schemas.py` `InflationDatasetSchema`)
 
 ## Data Visualization Modules
 
-- Matplotlib
-- Seaborn
+- Matplotlib 3.8 + Seaborn 0.13 + Statsmodels 0.14
 
 ## Machine Learning and Forecasting Implementations
 
-- Scikit-learn
-- XGBoost
-- Statsmodels
-- ARIMA
+- Scikit-learn 1.5 + XGBoost 2.1 + LightGBM 4.5 + Ridge ensemble (`src/train_model.py:compute_metrics`, `naive_baseline_mae`, `_capture_environment`)
+- 7 candidates: Ridge / MI / Poly / ElasticNet / RandomForest / LightGBM / XGBoost — best saved `models/ridge.pkl` + `metrics.json` + `holdout.csv`
 
 ## Analytical Methodologies
 
-- Advanced Statistical Analysis
-- Quantitative Feature Engineering
-- Iterative Time-Series Analysis
+- 30 FEATURE_COLUMNS clipped ±50% (`src/feature_engineering.py:12`), monthly resample `ME`, Pydantic `SandboxRequest` validation 422
 
 ---
 
 # Dataset Characteristics
 
-The programmatic architecture currently ingests a core set of primary macroeconomic indicators to establish the baseline predictive matrix:
+Monthly truth — 317 rows (2000-01-31 → 2026-05-31), 6 columns, resampled `ME` (no daily duplication). Validated by `src/schemas.py:InflationDatasetSchema` + `src/config.py:SETTINGS` frozen dataclass.
 
-### Primary Core Indicators
-- Indian Consumer Price Index (CPI) [Monthly]
-- Indian Wholesale Price Index (WPI) [Monthly]
-- Indian Gross Domestic Product (GDP) Trajectories [Annual / Proxies]
-- Reserve Bank of India (RBI) Benchmark Interest Rates [Monthly]
-- Foreign Exchange Variations (USD/INR) [Daily]
-- Global Energy Benchmarks (Brent Crude Oil) [Daily]
+### Primary Core Indicators (raw `data/inflation_dataset.csv`)
+- Indian CPI `INDCPIALLMINMEI` [Monthly, FRED, target YoY `pct_change(12)*100`]
+- WPI Industry `WPIATT01INM661N` [Monthly, FRED + RBI DBIE fallback `src/data_refresh.py:fetch_rbi_dbie_series`]
+- RBI Rate `INTDSRINM193N` [Monthly, FRED]
+- FX `DEXINUS` USD/INR [Daily → monthly `ME`]
+- Brent `DCOILBRENTEU` / `Average of DCOILBRENTEU` [Daily → monthly]
 
-### Derived Target Variable
-- **Inflation Rate:** Dynamically calculated via Year-over-Year (YoY) percentage change derivations against the baseline Indian CPI index data.
+### Derived Target & Features
+- **Target:** `INDCPIALLMINMEI` YoY % (monthly, shift 12)
+- **30 engineered features** (`src/feature_engineering.py:FEATURE_COLUMNS`) — lags 1/3/6/12, rolling mean/std, momentum, pct_change, clipped `±50%`, `RobustScaler` + `VarianceThreshold` + `SelectKBest` in `train_model.py`
+- **Refresh:** `src/data_refresh.py:merge_and_save` + `log_refresh` + `fetch_all_sources` cadence `daily` (FX/Brent) / `monthly` (CPI/WPI/Rate), `src/scheduler.py` checks `FRED_API_KEY`
 
-### Phase II Extensibility (Planned Expansion)
-Future iterations of the model will ingest extended external datasets localized for robust anomaly detection within the Indian economic framework:
-- Aggregate National Unemployment Rates
-- Indian Basket Crude Oil Valuations
-- Domestic Monetary Supply Aggregates (M1/M3)
-
-These metrics function as foundational input features for the systemic predictive modeling and temporal forecasting pipeline.
+### Phase II Extensibility
+Future: Unemployment annual, India Basket Crude, M1/M3 — plaintiffs kept out of core 30 to avoid leakage; add when monthly proxy available.
 
 ---
 
@@ -211,30 +210,27 @@ Generate future inflation forecasts and economic trend predictions.
 
 ```text
 VaticMacro/
-│
-├── data/
-│   ├── [Raw CSV datasets...]
-│   └── inflation_dataset.csv (Merged output)
-│
-├── models/
-│   ├── best_model.pkl (Dynamically saved)
-│   └── metrics.json
-│
-├── src/
-│   ├── preprocessing.py (Cleans & standardizes data formats)
-│   ├── feature_engineering.py (Generates lags & rolling averages)
-│   └── train_model.py (Trains multiple models and selects best)
-│
 ├── app/
-│   └── templates/
-│       └── cockpit.html (Single-page Command Center Dashboard)
-│
-├── .venv/ (Local Python Environment)
-├── requirements.txt
-├── merge_data.py (Master script to build dataset)
-├── app.py (Flask Web Application API Backend)
-├── src/update_data.py (ML 180-day Forecast Data Imputer)
-└── README.md
+│   ├── factory.py (FAANG factory `create_app` — /health + /api/predictive-sandbox Pydantic 422)
+│   ├── blueprints/{health,api,views}.py
+│   ├── services/schemas.py (SandboxRequest clipped ±50)
+│   └── templates/cockpit.html (1243-line SPA — skip-link, prefers-reduced-motion, data-testid)
+├── src/
+│   ├── config.py (frozen SETTINGS dataclass)
+│   ├── schemas.py (Pandera InflationDatasetSchema)
+│   ├── preprocessing.py (Daily→ME resample, pivot/year variants)
+│   ├── feature_engineering.py (30 FEATURE_COLUMNS, clipping)
+│   ├── train_model.py (compute_metrics/naive_baseline_mae/_capture_environment, 7 candidates, mlflow hook)
+│   ├── data_refresh.py (RBI fallback, merge_and_save, log_refresh, fetch_all_sources)
+│   └── scheduler.py (FRED_API_KEY check, daily/monthly cadence)
+├── benchmarks/{bench_holdout,bench_cv,bench_latency}.py (holdout R² 0.543 MAE 0.556 vs naive 0.654)
+├── tests/{unit,contracts,integration}/ (25 tests, 56% cov --cov-fail-under=50)
+├── data/inflation_dataset.csv (317×6 monthly truth — also Data/ legacy copy)
+├── models/{ridge,lightgbm,xgboost,best_model}.pkl + metrics.json + holdout.csv
+├── docs/{ARCHITECTURE,DATA_DICTIONARY,GETTING_STARTED}.md (monthly truth)
+├── pyproject.toml (single source, requires-python >=3.12,<3.15) + requirements-strict.txt
+├── Dockerfile (3.12-slim, non-root, HEALTHCHECK 10000/health) + render.yaml + docker-compose.yml
+└── app.py / merge_data.py / run_train.py (legacy entrypoints — prefer factory + src/)
 ```
 
 ---
@@ -296,33 +292,44 @@ This repository and framework are published explicitly for academic, research, a
 
 ---
 
-## Running locally (Windows)
+## Running locally (Windows 3.12)
 
-If you see "No module named 'flask'", use the included startup scripts to create a virtual environment and install dependencies.
+**Install (single source):**
+```powershell
+python -m pip install -e ".[dev]"        # or: pip install -r requirements-strict.txt
+pre-commit install
+```
 
-- PowerShell (recommended):
+**Quality gates (must pass):**
+```powershell
+ruff check .; ruff format --check .; mypy src app   # 0 errors, 28 files
+pytest -q                                            # 25 passed, 56% cov (gate 50)
+python benchmarks/bench_holdout.py   # Ridge CV 0.588 | Holdout R2 0.543 MAE 0.556 vs naive 0.654 PASS
+python benchmarks/bench_cv.py        # 20.5 ms PASS
+python benchmarks/bench_latency.py   # p95 49 ms PASS
+```
 
+**App (factory, 10000):**
+```powershell
+python -m pip install -r requirements.txt   # legacy compat
+python app.py                      # legacy SPA (still works)
+# or factory:
+$gunicorn app:app --bind 0.0.0.0:10000 --workers 2 --preload   # Dockerfile CMD
+# health + sandbox smoke:
+curl http://127.0.0.1:10000/health
+curl -X POST http://127.0.0.1:10000/api/predictive-sandbox -H "Content-Type: application/json" -d "{\"WPIATT01INM661N_pct_1m\":10}"
+# 422 on bad: {"WPIATT01INM661N_pct_1m":60}
+```
+
+**Docker / Render:**
+```powershell
+docker build -t vaticmacro:test .
+docker run -p 10000:10000 -e FRED_API_KEY=xxx -e REFRESH_TOKEN=yyy vaticmacro:test
+docker compose up --build
+```
+
+**Windows quick start (legacy scripts):**
 ```powershell
 powershell -ExecutionPolicy Bypass -File start.ps1
-```
-
-- CMD:
-
-```cmd
-start.bat
-```
-
-Or install dependencies manually then run the app:
-
-```powershell
-python -m pip install -r requirements.txt
-python app.py
-```
-
-Static-only fallback (no Python required): open `app/templates` in a simple file server:
-
-```powershell
-cd app/templates
-python -m http.server 8000
-# then open http://127.0.0.1:8000/dashboard.html
+# or: start.bat
 ```
