@@ -64,3 +64,13 @@ benchmarks/.benchmarks/
 data/refresh_log.json
 refresh_log.json
 **/refresh_log.json
+
+# Node / OS / env — never push
+**/node_modules/
+*.log
+*.tmp
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
