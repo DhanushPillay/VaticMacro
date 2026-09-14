@@ -23,10 +23,14 @@ class _DummyGrid:
             self.best_estimator_ = self.pipe
             self.best_estimator_.fit(X, y)
         except Exception:
+            from sklearn.feature_selection import (
+                SelectKBest,
+                VarianceThreshold,
+                f_regression,
+            )
             from sklearn.linear_model import Ridge
             from sklearn.pipeline import Pipeline
             from sklearn.preprocessing import RobustScaler
-            from sklearn.feature_selection import SelectKBest, VarianceThreshold, f_regression
 
             k = 5 if X.shape[1] >= 5 else X.shape[1]
             # ensure k not > n_features
@@ -60,7 +64,9 @@ class _DummyGrid:
         return self
 
 
-def _fake_cross_validate(estimator, X, y, cv=None, scoring=None, return_train_score=False):
+def _fake_cross_validate(
+    estimator, X, y, cv=None, scoring=None, return_train_score=False
+):
     return {
         "test_r2": np.array([0.5, 0.55, 0.6, 0.52, 0.58]),
         "test_neg_mean_absolute_error": np.array([-0.9, -0.85, -0.8, -0.88, -0.82]),
@@ -70,7 +76,6 @@ def _fake_cross_validate(estimator, X, y, cv=None, scoring=None, return_train_sc
 
 def test_train_full_pipeline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import src.train_model as tm
-
     from src.feature_engineering import create_features
 
     df_raw = pd.read_csv("data/inflation_dataset.csv")

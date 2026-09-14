@@ -72,7 +72,7 @@ pre-commit install
 ruff check .
 ruff format --check .
 mypy src app
-pytest -q                          # 25 tests, cov ≥50%
+pytest -q                          # 42 tests, cov >=80% (actual 92.7%)
 python benchmarks/bench_holdout.py  # Holdout R2>0.30 and MAE < naive
 python benchmarks/bench_cv.py       # create_features <250ms
 python benchmarks/bench_latency.py  # sandbox p95 <100ms
@@ -86,7 +86,7 @@ create_features 293 rows 32 cols in 20.5ms — PASS
 sandbox p50=0.2ms p95=49.0ms — PASS
 ```
 
-CI runs the same gate on Python 3.12: `ruff check`, `ruff format --check`, `mypy`, `pytest --cov --cov-fail-under=50`.
+CI runs the same gate on Python 3.12: `ruff check`, `ruff format --check`, `mypy`, `pytest --cov --cov-fail-under=80`.
 
 ## Run the Application
 
@@ -152,7 +152,7 @@ SPA is served at `/` (`app/templates/cockpit.html`, hash-router: `#command-cente
 
 ## Data and Refresh
 
-- Truth file: `data/inflation_dataset.csv` (317 × 6, 2000-01-31 to 2026-05-31). Also mirrored in `Data/` for legacy.
+- Truth file: `data/inflation_dataset.csv` (317 × 6, 2000-01-31 to 2026-05-31).
 - Raw sources: `data/*.csv` (FRED daily → `ME` resampled). See `docs/DATA_DICTIONARY.md`.
 - Refresh: `src/data_refresh.py` fetches FRED series `INDCPIALLMINMEI`, `WPIATT01INM661N`, `INTDSRINM193N`, `DEXINUS`, `DCOILBRENTEU` + RBI DBIE fallback for WPI (never raises). Scheduler `src/scheduler.py` calls `fetch_all_sources(cadence=daily|monthly|all)`; logs append to `data/refresh_log.json`.
 - Manual trigger:
@@ -258,7 +258,7 @@ Local `app.py` defaults to 5000; Docker to 10000. Set `PORT=5001 python app.py` 
 
 ### Tests fail on cov gate
 
-`--cov-fail-under=50` requires 50% coverage over `src`+`app`. Run `pytest --cov=src --cov=app --cov-report=term-missing` to find gaps.
+`--cov-fail-under=80` requires 80% coverage over `src`+`app` (actual 92.7%). Run `pytest --cov=src --cov=app --cov-report=term-missing` to find gaps.
 
 ### ruff / mypy failures
 

@@ -55,7 +55,7 @@ VaticMacro addresses this with:
 
 ## Dataset
 
-**File:** `data/inflation_dataset.csv` — 317 monthly rows, 2000-01-31 to 2026-05-31, 6 columns. Also mirrored in `Data/` for legacy compatibility. Validated by `src/schemas.py` (pandera) and `src/config.py` (frozen `SETTINGS`).
+**File:** `data/inflation_dataset.csv` — 317 monthly rows, 2000-01-31 to 2026-05-31, 6 columns. Validated by `src/schemas.py` (pandera) and `src/config.py` (frozen `SETTINGS`).
 
 | Column | Meaning | Source | Frequency |
 |---|---|---|---|
@@ -117,7 +117,7 @@ VaticMacro/
 │   ├── data_refresh.py         # FRED fetch + RBI fallback, merge_and_save, log_refresh
 │   └── scheduler.py            # cadence runner
 ├── benchmarks/                 # bench_holdout / bench_cv / bench_latency
-├── tests/                      # unit + contracts + integration (25 tests, 56% coverage)
+├── tests/                      # unit + contracts + integration (42 tests, 92.7% coverage, gate 80%)
 ├── data/inflation_dataset.csv  # 317×6 monthly truth
 ├── models/                     # best_model.pkl, metrics.json, holdout.csv + per-model pkl
 ├── docs/                       # ARCHITECTURE, DATA_DICTIONARY, BENCHMARKS, GETTING_STARTED
