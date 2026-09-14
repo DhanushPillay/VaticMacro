@@ -3,6 +3,7 @@ services:
     name: vaticmacro
     runtime: docker
     dockerfilePath: Dockerfile
+    healthCheckPath: /health
     envVars:
       - key: FLASK_HOST
         value: 0.0.0.0
@@ -10,11 +11,14 @@ services:
         value: "1"
       - key: FRED_API_KEY
         sync: false
+      - key: REFRESH_TOKEN
+        sync: false
+        # set in Render dashboard — protects POST /api/refresh
 
 crons:
   - name: daily-fx-brent-refresh
     schedule: "0 6 * * *"
-    command: "python src/scheduler.py"
+    command: "python src/scheduler.py daily"
   - name: monthly-cpi-wpi-rate-refresh
     schedule: "0 6 5 * *"
-    command: "python src/scheduler.py"
+    command: "python src/scheduler.py monthly"

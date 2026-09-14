@@ -1,8 +1,11 @@
 import sys
+
 try:
     from flask import Flask, render_template, request, redirect, url_for, jsonify  # type: ignore[reportMissingImports]
 except ImportError:
-    print("\nError: Missing Python dependency 'Flask'.\n\nPlease install required packages:\n\n    python -m pip install -r requirements.txt\n\nOr run the supplied Windows start script which creates a virtualenv and installs deps:\n\n    powershell -ExecutionPolicy Bypass -File start.ps1\n\nExiting.\n")
+    print(
+        "\nError: Missing Python dependency 'Flask'.\n\nPlease install required packages:\n\n    python -m pip install -r requirements.txt\n\nOr run the supplied Windows start script which creates a virtualenv and installs deps:\n\n    powershell -ExecutionPolicy Bypass -File start.ps1\n\nExiting.\n"
+    )
     sys.exit(1)
 
 import json
@@ -17,14 +20,18 @@ from pathlib import Path
 from sklearn.metrics import r2_score  # type: ignore[reportMissingImports]
 
 # Add src to path so feature_engineering can be imported
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 from feature_engineering import create_features  # type: ignore[reportMissingImports]
 
 import flask.json.provider as _fjp
 
+# Import data_refresh for the refresh API
+from data_refresh import fetch_all_sources
+
 
 class NumpyEncoder(_fjp.DefaultJSONProvider):
     """Custom JSON provider that serializes numpy types to native Python types."""
+
     def default(self, obj):
         if isinstance(obj, np.bool_):
             return bool(obj)
@@ -37,13 +44,14 @@ class NumpyEncoder(_fjp.DefaultJSONProvider):
         return super().default(obj)
 
 
-app = Flask(__name__, template_folder='app/templates')
+app = Flask(__name__, template_folder="app/templates")
 app.json_provider_class = NumpyEncoder
 app.json = NumpyEncoder(app)
 
 # ---------------------------------------------------------------------------
 # Utility helpers (unchanged from original)
 # ---------------------------------------------------------------------------
+
 
 def _mean_or_value(x):
     try:
@@ -58,7 +66,7 @@ def _mean_or_value(x):
 
 def _norm_key(s):
     """Normalize a model name/key for comparison by stripping non-word chars."""
-    return re.sub(r'\W+', '', str(s or '').lower())
+    return re.sub(r"\W+", "", str(s or "").lower())
 
 
 def _extract_model_r2(metrics_data, model_name):
@@ -71,7 +79,11 @@ def _extract_model_r2(metrics_data, model_name):
     if isinstance(metrics_list, list):
         for m in metrics_list:
             name_field = m.get("name") or m.get("model") or ""
-            if _norm_key(name_field) == nm or nm in _norm_key(name_field) or _norm_key(name_field) in nm:
+            if (
+                _norm_key(name_field) == nm
+                or nm in _norm_key(name_field)
+                or _norm_key(name_field) in nm
+            ):
                 return _mean_or_value(m.get("r2_mean") or m.get("r2"))
     # Case B: metrics is a dict of per-model entries
     for key, val in metrics_data.items():
@@ -81,34 +93,41 @@ def _extract_model_r2(metrics_data, model_name):
             continue
         key_nm = _norm_key(key)
         val_name = _norm_key(val.get("name", ""))
-        if nm and (nm == key_nm or nm == val_name or nm in key_nm or key_nm in nm or nm in val_name or val_name in nm):
+        if nm and (
+            nm == key_nm
+            or nm == val_name
+            or nm in key_nm
+            or key_nm in nm
+            or nm in val_name
+            or val_name in nm
+        ):
             return _mean_or_value(val.get("r2") or val.get("r2_mean"))
     return None
 
 
-def _compute_yoy_r2_from_holdout(pipeline, holdout_path=None, value_col='CPI'):
+def _compute_yoy_r2_from_holdout(pipeline, holdout_path=None, value_col="CPI"):
     """Compute YoY % R2 for a pipeline using models/holdout.csv when available.
     Returns a float R2 or None on error.
     """
     try:
         if holdout_path is None:
-            holdout_path = Path(BASE_DIR) / 'models' / 'holdout.csv'
+            holdout_path = Path(BASE_DIR) / "models" / "holdout.csv"
         else:
             holdout_path = Path(holdout_path)
         if not holdout_path.exists():
             return None
         hold = pd.read_csv(holdout_path)
-        if 'Date' not in hold.columns or value_col not in hold.columns:
+        if "Date" not in hold.columns or value_col not in hold.columns:
             return None
-        hold['Date'] = pd.to_datetime(hold['Date'])
-        hold = hold.sort_values('Date').reset_index(drop=True)
+        hold["Date"] = pd.to_datetime(hold["Date"])
+        hold = hold.sort_values("Date").reset_index(drop=True)
         # build YoY true series and corresponding indices
         y_true = []
         rows = []
         for idx, r in hold.iterrows():
-            d = r['Date']
+            d = r["Date"]
             y_ago = d - pd.Timedelta(days=365)
-            diffs = (hold['Date'] - y_ago).abs()
+            diffs = (hold["Date"] - y_ago).abs()
             if diffs.empty:
                 continue
             closest = diffs.idxmin()
@@ -119,10 +138,14 @@ def _compute_yoy_r2_from_holdout(pipeline, holdout_path=None, value_col='CPI'):
                 rows.append(idx)
         if len(rows) == 0:
             return None
-        X = hold.drop(columns=[value_col, 'Date'], errors='ignore')
+        X = hold.drop(columns=[value_col, "Date"], errors="ignore")
         X_y = X.iloc[rows]
         # pipeline may be wrapped in dict
-        pipe = pipeline if not isinstance(pipeline, dict) else (pipeline.get('pipeline') or pipeline.get('model') or None)
+        pipe = (
+            pipeline
+            if not isinstance(pipeline, dict)
+            else (pipeline.get("pipeline") or pipeline.get("model") or None)
+        )
         if pipe is None:
             return None
         yhat = pipe.predict(X_y)
@@ -134,9 +157,11 @@ def _compute_yoy_r2_from_holdout(pipeline, holdout_path=None, value_col='CPI'):
     except Exception:
         return None
 
+
 # ---------------------------------------------------------------------------
 # TASK 1: Environment validation for cross-machine model deployment
 # ---------------------------------------------------------------------------
+
 
 def _validate_environment(artifact_env):
     """Compare artifact library versions to the current runtime.
@@ -187,22 +212,30 @@ try:
             best_model = loaded.get("pipeline")
 
             # --- Environment validation (Task 1) ---
-            if 'environment' in loaded:
-                mismatches = _validate_environment(loaded['environment'])
+            if "environment" in loaded:
+                mismatches = _validate_environment(loaded["environment"])
                 if mismatches:
                     mismatch_detail = "\n".join(f"  • {m}" for m in mismatches)
                     ENV_MISMATCH_WARNING = (
                         "Model was trained in a different environment. "
                         "Predictions may be unreliable.\n" + mismatch_detail
                     )
-                    print(f"\n{'='*60}")
-                    print("[!] MODEL ENVIRONMENT MISMATCH")
+                    print(f"\n{'=' * 60}")
+                    print(
+                        "[!] MODEL ENVIRONMENT MISMATCH — soft warning (FAANG: degrade, don't crash)"
+                    )
                     print(mismatch_detail)
-                    print(f"{'='*60}\n")
+                    print(f"{'=' * 60}\n")
+                    # FAANG hardening: warn degraded rather than crash Render
+                    # Env pin still tracked in metrics.json/environment; CI hard-fails on mismatch
                 else:
-                    print("[Startup] Environment check passed — artifact matches runtime.")
+                    print(
+                        "[Startup] Environment check passed — artifact matches runtime."
+                    )
             else:
-                print("[Startup] No environment metadata in artifact (trained before version tracking).")
+                print(
+                    "[Startup] No environment metadata in artifact (trained before version tracking)."
+                )
         else:
             best_model = loaded
 except Exception as e:
@@ -211,24 +244,30 @@ except Exception as e:
 
 HOLDOUT_R2 = None
 
-holdout_csv_path = Path(BASE_DIR) / 'models' / 'holdout.csv'
+holdout_csv_path = Path(BASE_DIR) / "models" / "holdout.csv"
 if holdout_csv_path.exists() and best_model is not None:
     try:
         hold_df = pd.read_csv(holdout_csv_path)
-        if 'target_future_inflation' in hold_df.columns and 'Predicted_Inflation' in hold_df.columns:
+        if (
+            "target_future_inflation" in hold_df.columns
+            and "Predicted_Inflation" in hold_df.columns
+        ):
             from sklearn.metrics import r2_score as _r2
-            HOLDOUT_R2 = float(_r2(
-                hold_df['target_future_inflation'].dropna(),
-                hold_df['Predicted_Inflation'].dropna()
-            ))
-            print(f'[Startup] Holdout R2: {HOLDOUT_R2:.4f}')
+
+            HOLDOUT_R2 = float(
+                _r2(
+                    hold_df["target_future_inflation"].dropna(),
+                    hold_df["Predicted_Inflation"].dropna(),
+                )
+            )
+            print(f"[Startup] Holdout R2: {HOLDOUT_R2:.4f}")
     except Exception as e:
-        print(f'[Startup] Could not compute holdout R2: {e}')
+        print(f"[Startup] Could not compute holdout R2: {e}")
 
 # Load metrics.json
 if Path(METRICS_PATH).exists():
     try:
-        with open(METRICS_PATH, 'r') as f:
+        with open(METRICS_PATH, "r") as f:
             metrics_data = json.load(f)
         if MODEL_R2 is None and MODEL_NAME:
             MODEL_R2 = _extract_model_r2(metrics_data, MODEL_NAME)
@@ -237,51 +276,62 @@ if Path(METRICS_PATH).exists():
 
 # Compute holdout R2 if not available from metrics
 try:
-    if MODEL_R2 is None and Path(BASE_DIR / 'models' / 'holdout.csv').exists() and best_model is not None:
+    if (
+        MODEL_R2 is None
+        and Path(BASE_DIR / "models" / "holdout.csv").exists()
+        and best_model is not None
+    ):
         try:
-            hold = pd.read_csv(Path(BASE_DIR) / 'models' / 'holdout.csv')
-            hold['Date'] = pd.to_datetime(hold['Date'])
+            hold = pd.read_csv(Path(BASE_DIR) / "models" / "holdout.csv")
+            hold["Date"] = pd.to_datetime(hold["Date"])
             hold_feat = create_features(hold)
-            X_hold = hold_feat.drop(['Date', 'CPI'], axis=1, errors='ignore')
+            X_hold = hold_feat.drop(["Date", "CPI"], axis=1, errors="ignore")
             if FEATURE_COLUMNS:
                 X_hold = X_hold.reindex(columns=FEATURE_COLUMNS, fill_value=0)
-            pipe = best_model if not isinstance(best_model, dict) else (best_model.get('pipeline') or best_model.get('model') or None)
+            pipe = (
+                best_model
+                if not isinstance(best_model, dict)
+                else (best_model.get("pipeline") or best_model.get("model") or None)
+            )
             if pipe is None:
-                raise AttributeError('No pipeline available in best_model wrapper')
+                raise AttributeError("No pipeline available in best_model wrapper")
             preds = pipe.predict(X_hold)
-            if 'CPI' in hold.columns:
+            if "CPI" in hold.columns:
                 y_true = []
                 for _, r in hold.iterrows():
-                    d = pd.to_datetime(r['Date'])
+                    d = pd.to_datetime(r["Date"])
                     y_ago = d - pd.Timedelta(days=365)
-                    closest_idx = (hold['Date'] - y_ago).abs().idxmin()
-                    past_cpi = hold.loc[closest_idx, 'CPI']
+                    closest_idx = (hold["Date"] - y_ago).abs().idxmin()
+                    past_cpi = hold.loc[closest_idx, "CPI"]
                     if past_cpi:
-                        y_true.append(((r['CPI'] - past_cpi) / past_cpi) * 100)
+                        y_true.append(((r["CPI"] - past_cpi) / past_cpi) * 100)
                 if len(y_true) == len(preds):
                     MODEL_R2 = float(r2_score(y_true, preds))
         except Exception as e:
-            print('Could not compute holdout R2:', e)
+            print("Could not compute holdout R2:", e)
 except Exception:
     pass
 
 # Startup summary
-print('\n[Startup] model loaded:', bool(best_model))
-print('[Startup] FEATURE_COLUMNS count:', 0 if not FEATURE_COLUMNS else len(FEATURE_COLUMNS))
-print('[Startup] MODEL_NAME:', MODEL_NAME)
-print('[Startup] MODEL_R2:', MODEL_R2)
+print("\n[Startup] model loaded:", bool(best_model))
+print(
+    "[Startup] FEATURE_COLUMNS count:",
+    0 if not FEATURE_COLUMNS else len(FEATURE_COLUMNS),
+)
+print("[Startup] MODEL_NAME:", MODEL_NAME)
+print("[Startup] MODEL_R2:", MODEL_R2)
 if ENV_MISMATCH_WARNING:
-    print('[Startup] ENV WARNING:', ENV_MISMATCH_WARNING)
+    print("[Startup] ENV WARNING:", ENV_MISMATCH_WARNING)
 
 # Centralized Column Map
 COLUMN_MAP = {
-    'cpi': 'INDCPIALLMINMEI',
-    'wpi': 'WPIATT01INM661N',
-    'interest_rate': 'INTDSRINM193N',
-    'usd_inr': 'DEXINUS',
-    'brent_crude': 'Average of DCOILBRENTEU',
-    'industrial_prod': 'INDPRINTO01GYSAM',
-    'trade_balance': 'XTNTVA01INM667N',
+    "cpi": "INDCPIALLMINMEI",
+    "wpi": "WPIATT01INM661N",
+    "interest_rate": "INTDSRINM193N",
+    "usd_inr": "DEXINUS",
+    "brent_crude": "Average of DCOILBRENTEU",
+    "industrial_prod": "INDPRINTO01GYSAM",
+    "trade_balance": "XTNTVA01INM667N",
 }
 
 
@@ -290,25 +340,26 @@ COLUMN_MAP = {
 # Each returns a plain dict — used by both legacy routes and new API routes.
 # ---------------------------------------------------------------------------
 
+
 def _json_response(payload):
     """Return a cockpit API response that browsers must not cache."""
     response = jsonify(payload)
-    response.headers['Cache-Control'] = 'no-store, max-age=0'
+    response.headers["Cache-Control"] = "no-store, max-age=0"
     return response
 
 
 def _build_data_status():
     """Report merged-data age and the latest observation for each core indicator."""
-    now = pd.Timestamp.now(tz='UTC')
+    now = pd.Timestamp.now(tz="UTC")
     result = {
-        'generated_at': now.isoformat(),
-        'dataset_updated_at': None,
-        'latest_observation_date': None,
-        'age_days': None,
-        'status': 'unavailable',
-        'message': 'Dataset is unavailable.',
-        'indicators': [],
-        'model_trained_at': None,
+        "generated_at": now.isoformat(),
+        "dataset_updated_at": None,
+        "latest_observation_date": None,
+        "age_days": None,
+        "status": "unavailable",
+        "message": "Dataset is unavailable.",
+        "indicators": [],
+        "model_trained_at": None,
     }
     try:
         data_file = Path(DATA_PATH)
@@ -317,72 +368,80 @@ def _build_data_status():
 
         df = pd.read_csv(
             data_file,
-            usecols=lambda column: column == 'Date' or column in COLUMN_MAP.values(),
+            usecols=lambda column: column == "Date" or column in COLUMN_MAP.values(),
         )
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        df = df.dropna(subset=['Date']).sort_values('Date')
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+        df = df.dropna(subset=["Date"]).sort_values("Date")
         if df.empty:
-            result['message'] = 'Dataset contains no valid dates.'
+            result["message"] = "Dataset contains no valid dates."
             return result
 
-        latest_date = pd.Timestamp(df['Date'].max())
+        latest_date = pd.Timestamp(df["Date"].max())
         today = now.tz_localize(None).normalize()
         age_days = max(0, (today - latest_date.normalize()).days)
         if latest_date > today + pd.Timedelta(days=1):
-            overall_status = 'future'
+            overall_status = "future"
             message = (
-                'Dataset includes future-dated observations; review the source before '
-                'relying on current-status values.'
+                "Dataset includes future-dated observations; review the source before "
+                "relying on current-status values."
             )
         elif age_days <= 45:
-            overall_status = 'fresh'
-            message = 'Dataset is current for monthly macroeconomic reporting.'
+            overall_status = "fresh"
+            message = "Dataset is current for monthly macroeconomic reporting."
         elif age_days <= 90:
-            overall_status = 'delayed'
-            message = 'Dataset is delayed; current-status values may miss the latest release.'
+            overall_status = "delayed"
+            message = (
+                "Dataset is delayed; current-status values may miss the latest release."
+            )
         else:
-            overall_status = 'stale'
-            message = 'Dataset is stale; refresh source data before relying on current-status values.'
+            overall_status = "stale"
+            message = "Dataset is stale; refresh source data before relying on current-status values."
 
         indicators = []
         for key, column in COLUMN_MAP.items():
             if column not in df.columns:
                 continue
-            observed_dates = df.loc[df[column].notna(), 'Date']
+            observed_dates = df.loc[df[column].notna(), "Date"]
             if observed_dates.empty:
                 continue
             observed_date = pd.Timestamp(observed_dates.max())
             observed_age = max(0, (today - observed_date.normalize()).days)
             indicator_status = (
-                'fresh' if observed_age <= 45
-                else 'delayed' if observed_age <= 90
-                else 'stale'
+                "fresh"
+                if observed_age <= 45
+                else "delayed"
+                if observed_age <= 90
+                else "stale"
             )
-            indicators.append({
-                'key': key,
-                'label': key.replace('_', ' ').title(),
-                'observation_date': observed_date.strftime('%Y-%m-%d'),
-                'age_days': observed_age,
-                'status': indicator_status,
-            })
+            indicators.append(
+                {
+                    "key": key,
+                    "label": key.replace("_", " ").title(),
+                    "observation_date": observed_date.strftime("%Y-%m-%d"),
+                    "age_days": observed_age,
+                    "status": indicator_status,
+                }
+            )
 
-        result.update({
-            'dataset_updated_at': pd.Timestamp(
-                data_file.stat().st_mtime, unit='s', tz='UTC'
-            ).isoformat(),
-            'latest_observation_date': latest_date.strftime('%Y-%m-%d'),
-            'age_days': age_days,
-            'status': overall_status,
-            'message': message,
-            'indicators': indicators,
-        })
+        result.update(
+            {
+                "dataset_updated_at": pd.Timestamp(
+                    data_file.stat().st_mtime, unit="s", tz="UTC"
+                ).isoformat(),
+                "latest_observation_date": latest_date.strftime("%Y-%m-%d"),
+                "age_days": age_days,
+                "status": overall_status,
+                "message": message,
+                "indicators": indicators,
+            }
+        )
         model_file = Path(MODEL_PATH)
         if model_file.exists():
-            result['model_trained_at'] = pd.Timestamp(
-                model_file.stat().st_mtime, unit='s', tz='UTC'
+            result["model_trained_at"] = pd.Timestamp(
+                model_file.stat().st_mtime, unit="s", tz="UTC"
             ).isoformat()
     except Exception as exc:
-        result['message'] = f'Could not determine data freshness: {exc}'
+        result["message"] = f"Could not determine data freshness: {exc}"
     return result
 
 
@@ -396,47 +455,71 @@ def _pct_change(current, past):
 def _build_dashboard_data():
     """Compute all KPI values and chart data for the dashboard view."""
     df = pd.read_csv(DATA_PATH)
-    df['Date'] = pd.to_datetime(df['Date'])
-    df = df.sort_values('Date').reset_index(drop=True)
-    # Removed hardcoded 2025 cutoff. The dashboard should show ALL available data.
-    df = df.copy().reset_index(drop=True)
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.sort_values("Date").reset_index(drop=True)
+    df = df.copy()
 
-    latest = df.iloc[-1]
+    def get_latest_valid(col):
+        valid_df = df.dropna(subset=[col])
+        if valid_df.empty:
+            return None, None
+        last_row = valid_df.iloc[-1]
+        return last_row["Date"], last_row[col]
 
-    # Previous month baseline — use 1-period shift (not date proximity)
-    past_30 = df.iloc[-2] if len(df) >= 2 else latest
+    def get_val_at_offset(col, ref_date, days_offset):
+        if ref_date is None:
+            return None
+        valid_df = df.dropna(subset=[col])
+        if valid_df.empty:
+            return None
+        target_date = ref_date - pd.Timedelta(days=days_offset)
+        idx = (valid_df["Date"] - target_date).abs().idxmin()
+        return valid_df.loc[idx, col]
 
-    # YoY baseline — find row closest to 12 months prior
-    past_365_date = latest['Date'] - pd.Timedelta(days=365)
-    idx_365 = (df['Date'] - past_365_date).abs().idxmin()
-    past_365 = df.loc[idx_365]
+    latest_cpi_date, current_cpi = get_latest_valid(COLUMN_MAP["cpi"])
+    past_month_cpi = get_val_at_offset(COLUMN_MAP["cpi"], latest_cpi_date, 30)
+    past_year_cpi = get_val_at_offset(COLUMN_MAP["cpi"], latest_cpi_date, 365)
+    inflation_rate = (
+        ((current_cpi - past_year_cpi) / past_year_cpi) * 100 if past_year_cpi else 0
+    )
 
-    current_cpi = latest[COLUMN_MAP['cpi']]
-    past_year_cpi = past_365[COLUMN_MAP['cpi']]
-    inflation_rate = ((current_cpi - past_year_cpi) / past_year_cpi) * 100 if past_year_cpi else 0
-
-    past_month_year_ago_date = past_30['Date'] - pd.Timedelta(days=365)
-    idx_month_year_ago = (df['Date'] - past_month_year_ago_date).abs().idxmin()
-    past_month_year_ago_cpi = df.loc[idx_month_year_ago, COLUMN_MAP['cpi']]
-    past_month_inflation = ((past_30[COLUMN_MAP['cpi']] - past_month_year_ago_cpi) / past_month_year_ago_cpi) * 100 if past_month_year_ago_cpi else 0
+    past_month_year_ago_cpi = get_val_at_offset(
+        COLUMN_MAP["cpi"], latest_cpi_date - pd.Timedelta(days=30), 365
+    )
+    past_month_inflation = (
+        ((past_month_cpi - past_month_year_ago_cpi) / past_month_year_ago_cpi) * 100
+        if past_month_year_ago_cpi
+        else 0
+    )
     inflation_change = inflation_rate - past_month_inflation
 
-    # Chart data — last 24 months
-    df_monthly = df.set_index('Date').resample('MS').last().reset_index()
-    recent_history = df_monthly.tail(24).copy()
+    # Chart data — last 24 months of valid CPI data
+    cpi_df = df.dropna(subset=[COLUMN_MAP["cpi"]]).copy()
+    cpi_monthly = (
+        cpi_df.set_index("Date")
+        .resample("MS")
+        .last()
+        .reset_index()
+        .dropna(subset=[COLUMN_MAP["cpi"]])
+    )
+    recent_history = cpi_monthly.tail(24).copy()
 
     chart_dates = []
     chart_values = []
     for _, row in recent_history.iterrows():
-        d = row['Date']
+        d = row["Date"]
         y_ago = d - pd.Timedelta(days=365)
-        closest_y_idx = (df['Date'] - y_ago).abs().idxmin()
-        y_ago_cpi = df.loc[closest_y_idx, COLUMN_MAP['cpi']]
-        val = ((row[COLUMN_MAP['cpi']] - y_ago_cpi) / y_ago_cpi) * 100 if y_ago_cpi else 0
-        chart_dates.append(d.strftime('%b %Y'))
+        closest_y_idx = (cpi_df["Date"] - y_ago).abs().idxmin()
+        y_ago_cpi = cpi_df.loc[closest_y_idx, COLUMN_MAP["cpi"]]
+        val = (
+            ((row[COLUMN_MAP["cpi"]] - y_ago_cpi) / y_ago_cpi) * 100 if y_ago_cpi else 0
+        )
+        chart_dates.append(d.strftime("%b %Y"))
         chart_values.append(round(val, 2))
 
-    avg_inflation = round(sum(chart_values) / len(chart_values), 2) if chart_values else 0
+    avg_inflation = (
+        round(sum(chart_values) / len(chart_values), 2) if chart_values else 0
+    )
     if chart_values:
         peak_inflation = max(chart_values)
         peak_date = chart_dates[chart_values.index(peak_inflation)]
@@ -445,30 +528,62 @@ def _build_dashboard_data():
     else:
         peak_inflation = peak_date = low_inflation = low_date = 0
 
+    latest_wpi_date, current_wpi = get_latest_valid(COLUMN_MAP["wpi"])
+    latest_rate_date, current_rate = get_latest_valid(COLUMN_MAP["interest_rate"])
+    latest_fx_date, current_fx = get_latest_valid(COLUMN_MAP["usd_inr"])
+    latest_brent_date, current_brent = get_latest_valid(COLUMN_MAP["brent_crude"])
+
+    def format_date(d):
+        return d.strftime("%Y-%m-%d") if pd.notnull(d) else "N/A"
+
     return {
-        'inflation_rate': round(float(inflation_rate), 2),
-        'inflation_change': round(float(inflation_change), 2),
-        'cpi_value': round(float(latest[COLUMN_MAP['cpi']]), 2),
-        'cpi_change': round(float(_pct_change(latest[COLUMN_MAP['cpi']], past_30[COLUMN_MAP['cpi']])), 2),
-        'wpi_value': round(float(latest[COLUMN_MAP['wpi']]), 2),
-        'wpi_change': round(float(_pct_change(latest[COLUMN_MAP['wpi']], past_30[COLUMN_MAP['wpi']])), 2),
-        'interest_rate': round(float(latest[COLUMN_MAP['interest_rate']]), 2),
-        'usdinr_value': round(float(latest[COLUMN_MAP['usd_inr']]), 2),
-        'usdinr_change': round(float(_pct_change(latest[COLUMN_MAP['usd_inr']], past_30[COLUMN_MAP['usd_inr']])), 2),
-        'brent_value': round(float(latest[COLUMN_MAP['brent_crude']]), 2),
-        'brent_change': round(float(_pct_change(latest[COLUMN_MAP['brent_crude']], past_30[COLUMN_MAP['brent_crude']])), 2),
-        'avg_inflation': avg_inflation,
-        'peak_inflation': peak_inflation,
-        'peak_date': peak_date,
-        'low_inflation': low_inflation,
-        'low_date': low_date,
-        'trend': 'Rising' if inflation_change > 0 else 'Declining',
-        'num_features': len(FEATURE_COLUMNS) if FEATURE_COLUMNS else len(COLUMN_MAP),
-        'num_observations': len(df),
-        'date_range': f"{df['Date'].dt.year.min()} - {df['Date'].dt.year.max()}",
-        'data_as_of': latest['Date'].strftime('%B %Y'),
-        'inflation_history': [
-            {'date': chart_dates[i], 'value': chart_values[i]}
+        "inflation_rate": round(float(inflation_rate), 2),
+        "inflation_change": round(float(inflation_change), 2),
+        "cpi_value": round(float(current_cpi or 0), 2),
+        "cpi_change": round(float(_pct_change(current_cpi, past_month_cpi)), 2),
+        "wpi_value": round(float(current_wpi or 0), 2),
+        "wpi_change": round(
+            float(
+                _pct_change(
+                    current_wpi,
+                    get_val_at_offset(COLUMN_MAP["wpi"], latest_wpi_date, 30),
+                )
+            ),
+            2,
+        ),
+        "interest_rate": round(float(current_rate or 0), 2),
+        "usdinr_value": round(float(current_fx or 0), 2),
+        "usdinr_change": round(
+            float(
+                _pct_change(
+                    current_fx,
+                    get_val_at_offset(COLUMN_MAP["usd_inr"], latest_fx_date, 30),
+                )
+            ),
+            2,
+        ),
+        "brent_value": round(float(current_brent or 0), 2),
+        "brent_change": round(
+            float(
+                _pct_change(
+                    current_brent,
+                    get_val_at_offset(COLUMN_MAP["brent_crude"], latest_brent_date, 30),
+                )
+            ),
+            2,
+        ),
+        "avg_inflation": avg_inflation,
+        "peak_inflation": peak_inflation,
+        "peak_date": peak_date,
+        "low_inflation": low_inflation,
+        "low_date": low_date,
+        "trend": "Rising" if inflation_change > 0 else "Declining",
+        "num_features": len(FEATURE_COLUMNS) if FEATURE_COLUMNS else len(COLUMN_MAP),
+        "num_observations": len(df),
+        "date_range": f"{df['Date'].dt.year.min()} - {df['Date'].dt.year.max()}",
+        "data_as_of": f"CPI: {format_date(latest_cpi_date)} | Brent: {format_date(latest_brent_date)}",
+        "inflation_history": [
+            {"date": chart_dates[i], "value": chart_values[i]}
             for i in range(len(chart_dates))
         ],
     }
@@ -477,83 +592,104 @@ def _build_dashboard_data():
 def _build_analysis_data():
     """Compute correlation matrix, per-indicator time series, and histograms."""
     df = pd.read_csv(DATA_PATH)
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'])
+    if "Date" in df.columns:
+        df["Date"] = pd.to_datetime(df["Date"])
 
     corr_cols = {
-        COLUMN_MAP['cpi']: 'CPI',
-        COLUMN_MAP['wpi']: 'WPI',
-        COLUMN_MAP['interest_rate']: 'Interest Rate',
-        COLUMN_MAP['usd_inr']: 'USD/INR',
-        COLUMN_MAP['brent_crude']: 'Brent Crude',
+        COLUMN_MAP["cpi"]: "CPI",
+        COLUMN_MAP["wpi"]: "WPI",
+        COLUMN_MAP["interest_rate"]: "Interest Rate",
+        COLUMN_MAP["usd_inr"]: "USD/INR",
+        COLUMN_MAP["brent_crude"]: "Brent Crude",
     }
     available_corr_keys = [c for c in corr_cols.keys() if c in df.columns]
     if available_corr_keys:
         corr_df = df[available_corr_keys].rename(columns=corr_cols).corr().round(2)
-        corr_matrix = corr_df.to_dict('index')
+        corr_matrix = corr_df.to_dict("index")
     else:
         corr_matrix = {}
 
     key_findings = [
         "CPI is strongly correlated with WPI and Exchange Rates.",
         "Interest rates show a delayed effect on inflation (90+ day lag).",
-        "Brent Crude has immediate transmission into WPI."
+        "Brent Crude has immediate transmission into WPI.",
     ]
 
     try:
         from statsmodels.tsa.stattools import adfuller
+
         stationarity_tests = []
-        test_series = {'CPI': COLUMN_MAP['cpi'], 'WPI': COLUMN_MAP['wpi'], 'Brent Crude': COLUMN_MAP['brent_crude']}
+        test_series = {
+            "CPI": COLUMN_MAP["cpi"],
+            "WPI": COLUMN_MAP["wpi"],
+            "Brent Crude": COLUMN_MAP["brent_crude"],
+        }
         for label, col_name in test_series.items():
             if col_name in df.columns:
                 series = df[col_name].dropna()
                 if len(series) > 20:
-                    result = adfuller(series, maxlag=12, autolag='AIC')
-                    stationarity_tests.append({
-                        'name': label,
-                        'adf_stat': round(result[0], 2),
-                        'p_value': round(result[1], 4),
-                        'stationary': result[1] < 0.05
-                    })
+                    result = adfuller(series, maxlag=12, autolag="AIC")
+                    stationarity_tests.append(
+                        {
+                            "name": label,
+                            "adf_stat": round(result[0], 2),
+                            "p_value": round(result[1], 4),
+                            "stationary": result[1] < 0.05,
+                        }
+                    )
                     # Also test differenced
-                    diff_result = adfuller(series.diff().dropna(), maxlag=12, autolag='AIC')
-                    stationarity_tests.append({
-                        'name': f'{label} (Differenced)',
-                        'adf_stat': round(diff_result[0], 2),
-                        'p_value': round(diff_result[1], 4),
-                        'stationary': diff_result[1] < 0.05
-                    })
+                    diff_result = adfuller(
+                        series.diff().dropna(), maxlag=12, autolag="AIC"
+                    )
+                    stationarity_tests.append(
+                        {
+                            "name": f"{label} (Differenced)",
+                            "adf_stat": round(diff_result[0], 2),
+                            "p_value": round(diff_result[1], 4),
+                            "stationary": diff_result[1] < 0.05,
+                        }
+                    )
     except ImportError:
         stationarity_tests = [
-            {'name': 'CPI', 'adf_stat': -1.2, 'p_value': 0.65, 'stationary': False},
-            {'name': 'CPI (Differenced)', 'adf_stat': -4.5, 'p_value': 0.001, 'stationary': True},
-            {'name': 'Brent Crude', 'adf_stat': -2.1, 'p_value': 0.25, 'stationary': False}
+            {"name": "CPI", "adf_stat": -1.2, "p_value": 0.65, "stationary": False},
+            {
+                "name": "CPI (Differenced)",
+                "adf_stat": -4.5,
+                "p_value": 0.001,
+                "stationary": True,
+            },
+            {
+                "name": "Brent Crude",
+                "adf_stat": -2.1,
+                "p_value": 0.25,
+                "stationary": False,
+            },
         ]
 
     # Per-indicator time series and histograms
     df_copy = df.copy()
-    df_copy['Date'] = pd.to_datetime(df_copy['Date'])
-    df_monthly = df_copy.set_index('Date').resample('MS').last().reset_index()
-    dates_str = df_monthly['Date'].dt.strftime('%b %Y').tolist()
+    df_copy["Date"] = pd.to_datetime(df_copy["Date"])
+    df_monthly = df_copy.set_index("Date").resample("MS").last().reset_index()
+    dates_str = df_monthly["Date"].dt.strftime("%b %Y").tolist()
 
     analysis_data_dict = {}
     for col_key, col_name in corr_cols.items():
         vals = df_monthly[col_key].dropna().tolist()
         counts, bins = np.histogram(df[col_key].dropna(), bins=20)
         analysis_data_dict[col_name] = {
-            'dates': dates_str,
-            'values': vals,
-            'hist_counts': counts.tolist(),
-            'hist_labels': [f"{round(bins[i], 1)}" for i in range(len(bins) - 1)]
+            "dates": dates_str,
+            "values": vals,
+            "hist_counts": counts.tolist(),
+            "hist_labels": [f"{round(bins[i], 1)}" for i in range(len(bins) - 1)],
         }
 
     return {
-        'key_findings': key_findings,
-        'stationarity_tests': stationarity_tests,
-        'feature_names': list(corr_cols.values()),
-        'analysis_data': analysis_data_dict,
-        'corr_matrix': corr_matrix,
-        'features': list(corr_cols.values())
+        "key_findings": key_findings,
+        "stationarity_tests": stationarity_tests,
+        "feature_names": list(corr_cols.values()),
+        "analysis_data": analysis_data_dict,
+        "corr_matrix": corr_matrix,
+        "features": list(corr_cols.values()),
     }
 
 
@@ -562,7 +698,7 @@ def _build_models_data():
     metrics_data = {"best_model": "Unknown", "metrics": {}}
     if os.path.exists(METRICS_PATH):
         try:
-            with open(METRICS_PATH, 'r') as f:
+            with open(METRICS_PATH, "r") as f:
                 metrics_data = json.load(f)
         except Exception as e:
             print(f"Error loading metrics: {e}")
@@ -578,13 +714,15 @@ def _build_models_data():
             r2_mean = _mean_or_value(m.get("r2_mean") or m.get("r2")) or 0.0
             mae_mean = _mean_or_value(m.get("mae")) or 0.0
             rmse_mean = _mean_or_value(m.get("rmse")) or 0.0
-            models_metrics.append({
-                "name": name,
-                "key": str(name).lower().replace(" ", "_"),
-                "r2_mean": r2_mean,
-                "mae": mae_mean,
-                "rmse": rmse_mean
-            })
+            models_metrics.append(
+                {
+                    "name": name,
+                    "key": str(name).lower().replace(" ", "_"),
+                    "r2_mean": r2_mean,
+                    "mae": mae_mean,
+                    "rmse": rmse_mean,
+                }
+            )
     else:
         for key, val in metrics_data.items():
             if key == "best_model":
@@ -595,52 +733,59 @@ def _build_models_data():
             r2_mean = _mean_or_value(val.get("r2") or val.get("r2_mean")) or 0.0
             mae_mean = _mean_or_value(val.get("mae")) or 0.0
             rmse_mean = _mean_or_value(val.get("rmse")) or 0.0
-            models_metrics.append({
-                "name": name,
-                "key": key.lower(),
-                "r2_mean": r2_mean,
-                "mae": mae_mean,
-                "rmse": rmse_mean
-            })
+            models_metrics.append(
+                {
+                    "name": name,
+                    "key": key.lower(),
+                    "r2_mean": r2_mean,
+                    "mae": mae_mean,
+                    "rmse": rmse_mean,
+                }
+            )
 
     best_model_r2 = float(MODEL_R2) if MODEL_R2 is not None else 0.0
     best_model_mae = 0
     best_model_rmse = 0
 
     for m in models_metrics:
-        if _norm_key(m.get('name', '')) == _norm_key(best_model_name):
-            best_model_r2 = m.get('r2_mean', 0)
-            best_model_mae = m.get('mae', 0)
-            best_model_rmse = m.get('rmse', 0)
+        if _norm_key(m.get("name", "")) == _norm_key(best_model_name):
+            best_model_r2 = m.get("r2_mean", 0)
+            best_model_mae = m.get("mae", 0)
+            best_model_rmse = m.get("rmse", 0)
             break
 
     # Extract real feature importances from the loaded model
     feature_importances = _extract_feature_importances()
 
     prediction_chart_data = {"dates": [], "actual": [], "best_model_predictions": []}
-    holdout_csv = Path(BASE_DIR) / 'models' / 'holdout.csv'
+    holdout_csv = Path(BASE_DIR) / "models" / "holdout.csv"
     if holdout_csv.exists():
         try:
             hold = pd.read_csv(holdout_csv)
-            hold['Date'] = pd.to_datetime(hold['Date'])
-            hold = hold.sort_values('Date').reset_index(drop=True)
-            if 'target_future_inflation' in hold.columns and 'Predicted_Inflation' in hold.columns:
+            hold["Date"] = pd.to_datetime(hold["Date"])
+            hold = hold.sort_values("Date").reset_index(drop=True)
+            if (
+                "target_future_inflation" in hold.columns
+                and "Predicted_Inflation" in hold.columns
+            ):
                 prediction_chart_data = {
-                    "dates": hold['Date'].dt.strftime('%b %Y').tolist(),
-                    "actual": hold['target_future_inflation'].round(2).tolist(),
-                    "best_model_predictions": hold['Predicted_Inflation'].round(2).tolist()
+                    "dates": hold["Date"].dt.strftime("%b %Y").tolist(),
+                    "actual": hold["target_future_inflation"].round(2).tolist(),
+                    "best_model_predictions": hold["Predicted_Inflation"]
+                    .round(2)
+                    .tolist(),
                 }
         except Exception as e:
             print(f"Could not load holdout for chart: {e}")
 
     return {
-        'best_model_name': best_model_name,
-        'models_metrics': models_metrics,
-        'best_model_r2': best_model_r2,
-        'best_model_mae': best_model_mae,
-        'best_model_rmse': best_model_rmse,
-        'feature_importances': feature_importances,
-        'prediction_chart_data': prediction_chart_data
+        "best_model_name": best_model_name,
+        "models_metrics": models_metrics,
+        "best_model_r2": best_model_r2,
+        "best_model_mae": best_model_mae,
+        "best_model_rmse": best_model_rmse,
+        "feature_importances": feature_importances,
+        "prediction_chart_data": prediction_chart_data,
     }
 
 
@@ -655,7 +800,12 @@ def _extract_feature_importances():
             raise ValueError("No model or feature columns available")
 
         from sklearn.pipeline import Pipeline  # type: ignore[reportMissingImports]
-        pipe = best_model if not isinstance(best_model, dict) else best_model.get('pipeline')
+
+        pipe = (
+            best_model
+            if not isinstance(best_model, dict)
+            else best_model.get("pipeline")
+        )
         if pipe is None:
             raise ValueError("No pipeline in model wrapper")
 
@@ -666,12 +816,12 @@ def _extract_feature_importances():
             final_step = pipe
 
         # Unwrap ClipRegressor if present
-        estimator = getattr(final_step, 'estimator_', final_step)
+        estimator = getattr(final_step, "estimator_", final_step)
 
         # Extract importances based on estimator type
-        if hasattr(estimator, 'feature_importances_'):
+        if hasattr(estimator, "feature_importances_"):
             raw_importances = estimator.feature_importances_
-        elif hasattr(estimator, 'coef_'):
+        elif hasattr(estimator, "coef_"):
             raw_importances = np.abs(estimator.coef_)
         else:
             raise ValueError("Estimator has no feature_importances_ or coef_")
@@ -688,14 +838,18 @@ def _extract_feature_importances():
         result = []
         for name, value in top:
             # Shorten long engineered feature names for readability
-            display_name = name.replace('_pct_change_', ' Δ').replace('_lag_pct_', ' lag ')
-            display_name = display_name.replace('_rolling_pct_avg_', ' avg ')
+            display_name = name.replace("_pct_change_", " Δ").replace(
+                "_lag_pct_", " lag "
+            )
+            display_name = display_name.replace("_rolling_pct_avg_", " avg ")
             pct = round((value / total) * 100, 1)
-            result.append({
-                "name": display_name,
-                "value": f"{value:.4f}",
-                "percentage": float(pct)
-            })
+            result.append(
+                {
+                    "name": display_name,
+                    "value": f"{value:.4f}",
+                    "percentage": float(pct),
+                }
+            )
         return result
 
     except Exception:
@@ -705,53 +859,57 @@ def _extract_feature_importances():
             {"name": "Brent Crude", "value": "0.25", "percentage": 25},
             {"name": "USD/INR Rate", "value": "0.20", "percentage": 20},
             {"name": "Interest Rate", "value": "0.15", "percentage": 15},
-            {"name": "GDP Proxy", "value": "0.05", "percentage": 5}
+            {"name": "GDP Proxy", "value": "0.05", "percentage": 5},
         ]
 
 
 def _build_forecast_data():
     """Compute 12-month inflation trend and current indicator values."""
     df = pd.read_csv(DATA_PATH)
-    df['Date'] = pd.to_datetime(df['Date'])
-    df = df.sort_values('Date').reset_index(drop=True)
+    df["Date"] = pd.to_datetime(df["Date"])
+    df = df.sort_values("Date").reset_index(drop=True)
     df = df.copy().reset_index(drop=True)
 
-    latest_date = df['Date'].max()
+    latest_date = df["Date"].max()
     one_year_ago = latest_date - pd.Timedelta(days=365)
-    historical = df[df['Date'] >= one_year_ago].copy()
+    historical = df[df["Date"] >= one_year_ago].copy()
 
-    months = historical['Date'].dt.strftime('%b %Y').tolist()
-    cpi_values = historical[COLUMN_MAP['cpi']].tolist()
+    months = historical["Date"].dt.strftime("%b %Y").tolist()
+    cpi_values = historical[COLUMN_MAP["cpi"]].tolist()
 
     inflation_rates = []
     for idx, row in historical.iterrows():
-        d = row['Date']
+        d = row["Date"]
         y_ago = d - pd.Timedelta(days=365)
-        closest_idx = (df['Date'] - y_ago).abs().idxmin()
-        past_cpi = df.loc[closest_idx, COLUMN_MAP['cpi']]
-        current_cpi = row[COLUMN_MAP['cpi']]
+        closest_idx = (df["Date"] - y_ago).abs().idxmin()
+        past_cpi = df.loc[closest_idx, COLUMN_MAP["cpi"]]
+        current_cpi = row[COLUMN_MAP["cpi"]]
         inf_rate = ((current_cpi - past_cpi) / past_cpi) * 100 if past_cpi else 0
         inflation_rates.append(round(inf_rate, 2))
 
     latest = df.iloc[-1]
-    current_cpi = latest[COLUMN_MAP['cpi']]
-    past_year = latest['Date'] - pd.Timedelta(days=365)
-    past_idx = (df['Date'] - past_year).abs().idxmin()
-    past_cpi_val = df.loc[past_idx, COLUMN_MAP['cpi']]
-    current_inflation = ((current_cpi - past_cpi_val) / past_cpi_val) * 100 if past_cpi_val else 0
+    current_cpi = latest[COLUMN_MAP["cpi"]]
+    past_year = latest["Date"] - pd.Timedelta(days=365)
+    past_idx = (df["Date"] - past_year).abs().idxmin()
+    past_cpi_val = df.loc[past_idx, COLUMN_MAP["cpi"]]
+    current_inflation = (
+        ((current_cpi - past_cpi_val) / past_cpi_val) * 100 if past_cpi_val else 0
+    )
 
     return {
-        'months': months,
-        'cpi_values': cpi_values,
-        'inflation_rates': inflation_rates,
-        'current_cpi': round(current_cpi, 2),
-        'current_wpi': round(latest[COLUMN_MAP['wpi']], 2),
-        'current_rate': round(latest[COLUMN_MAP['interest_rate']], 2),
-        'current_inflation': round(current_inflation, 2),
-        'latest_date': latest_date.strftime('%B %d, %Y'),
-        'forecast_model': MODEL_NAME if MODEL_NAME else 'ML Ensemble',
-        'model_order': f'Holdout R²={HOLDOUT_R2:.4f}' if HOLDOUT_R2 is not None else 'N/A',
-        'data_points': len(df)
+        "months": months,
+        "cpi_values": cpi_values,
+        "inflation_rates": inflation_rates,
+        "current_cpi": round(current_cpi, 2),
+        "current_wpi": round(latest[COLUMN_MAP["wpi"]], 2),
+        "current_rate": round(latest[COLUMN_MAP["interest_rate"]], 2),
+        "current_inflation": round(current_inflation, 2),
+        "latest_date": latest_date.strftime("%B %d, %Y"),
+        "forecast_model": MODEL_NAME if MODEL_NAME else "ML Ensemble",
+        "model_order": f"Holdout R²={HOLDOUT_R2:.4f}"
+        if HOLDOUT_R2 is not None
+        else "N/A",
+        "data_points": len(df),
     }
 
 
@@ -761,19 +919,20 @@ def _get_dynamic_defaults():
             df = pd.read_csv(DATA_PATH)
             latest = df.iloc[-1]
             return {
-                'wpi_index': float(latest.get(COLUMN_MAP['wpi'], 136.30)),
-                'interest_rate': float(latest.get(COLUMN_MAP['interest_rate'], 6.5)),
-                'usd_inr': float(latest.get(COLUMN_MAP['usd_inr'], 83.42)),
-                'brent_crude': float(latest.get(COLUMN_MAP['brent_crude'], 80.92)),
+                "wpi_index": float(latest.get(COLUMN_MAP["wpi"], 136.30)),
+                "interest_rate": float(latest.get(COLUMN_MAP["interest_rate"], 6.5)),
+                "usd_inr": float(latest.get(COLUMN_MAP["usd_inr"], 83.42)),
+                "brent_crude": float(latest.get(COLUMN_MAP["brent_crude"], 80.92)),
             }
     except Exception:
         pass
     return {
-        'wpi_index': 165.50,
-        'interest_rate': 5.25,
-        'usd_inr': 95.40,
-        'brent_crude': 107.00,
+        "wpi_index": 165.50,
+        "interest_rate": 5.25,
+        "usd_inr": 95.40,
+        "brent_crude": 107.00,
     }
+
 
 def _run_prediction(form_data):
     """Execute a prediction given form input data. Returns a result dict.
@@ -782,17 +941,17 @@ def _run_prediction(form_data):
     """
     default_values = _get_dynamic_defaults()
 
-    val_wpi = float(form_data.get('wpi_index', default_values['wpi_index']))
-    val_ir = float(form_data.get('interest_rate', default_values['interest_rate']))
-    val_usd = float(form_data.get('usd_inr', default_values['usd_inr']))
-    val_brent = float(form_data.get('brent_crude', default_values['brent_crude']))
-    raw_date = form_data.get('scenario_date', '')
+    val_wpi = float(form_data.get("wpi_index", default_values["wpi_index"]))
+    val_ir = float(form_data.get("interest_rate", default_values["interest_rate"]))
+    val_usd = float(form_data.get("usd_inr", default_values["usd_inr"]))
+    val_brent = float(form_data.get("brent_crude", default_values["brent_crude"]))
+    raw_date = form_data.get("scenario_date", "")
 
     current_values = {
-        'wpi_index': val_wpi,
-        'interest_rate': val_ir,
-        'usd_inr': val_usd,
-        'brent_crude': val_brent,
+        "wpi_index": val_wpi,
+        "interest_rate": val_ir,
+        "usd_inr": val_usd,
+        "brent_crude": val_brent,
     }
 
     prediction = None
@@ -805,77 +964,106 @@ def _run_prediction(form_data):
 
         if best_model and os.path.exists(DATA_PATH):
             df = pd.read_csv(DATA_PATH)
-            df['Date'] = pd.to_datetime(df['Date'])
-            df = df.sort_values('Date').reset_index(drop=True)
+            df["Date"] = pd.to_datetime(df["Date"])
+            df = df.sort_values("Date").reset_index(drop=True)
 
-            last_date = df['Date'].max()
-            new_date = scenario_date if scenario_date is not None else last_date + pd.Timedelta(days=30)
+            last_date = df["Date"].max()
+            new_date = (
+                scenario_date
+                if scenario_date is not None
+                else last_date + pd.Timedelta(days=30)
+            )
 
             new_row = df.iloc[-1].copy()
-            new_row['Date'] = new_date
-            new_row[COLUMN_MAP['brent_crude']] = val_brent
-            new_row[COLUMN_MAP['usd_inr']] = val_usd
-            new_row[COLUMN_MAP['interest_rate']] = val_ir
-            new_row[COLUMN_MAP['wpi']] = val_wpi
+            new_row["Date"] = new_date
+            new_row[COLUMN_MAP["brent_crude"]] = val_brent
+            new_row[COLUMN_MAP["usd_inr"]] = val_usd
+            new_row[COLUMN_MAP["interest_rate"]] = val_ir
+            new_row[COLUMN_MAP["wpi"]] = val_wpi
 
             # Build prediction features
             pred_X = None
             try:
-                if FEATURE_COLUMNS and all([col in df.columns for col in FEATURE_COLUMNS]):
-                    row_vals = {col: (new_row.get(col, 0) if col in new_row.index else 0) for col in FEATURE_COLUMNS}
+                if FEATURE_COLUMNS and all(
+                    [col in df.columns for col in FEATURE_COLUMNS]
+                ):
+                    row_vals = {
+                        col: (new_row.get(col, 0) if col in new_row.index else 0)
+                        for col in FEATURE_COLUMNS
+                    }
                     pred_X = pd.DataFrame([row_vals])
                 else:
-                    df_pred = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                    df_pred = pd.concat(
+                        [df, pd.DataFrame([new_row])], ignore_index=True
+                    )
                     featured_df = create_features(df_pred)
-                    scenario_feature_row = featured_df.loc[featured_df['Date'] == new_date].tail(1)
+                    scenario_feature_row = featured_df.loc[
+                        featured_df["Date"] == new_date
+                    ].tail(1)
                     if scenario_feature_row.empty:
                         scenario_feature_row = featured_df.iloc[[-1]]
-                    pred_X = scenario_feature_row.drop(['Date', 'CPI'], axis=1, errors='ignore')
+                    pred_X = scenario_feature_row.drop(
+                        ["Date", "CPI"], axis=1, errors="ignore"
+                    )
                     if FEATURE_COLUMNS:
                         pred_X = pred_X.reindex(columns=FEATURE_COLUMNS, fill_value=0)
             except Exception:
-                pred_X = pd.DataFrame([[0] * (len(FEATURE_COLUMNS) if FEATURE_COLUMNS else 1)],
-                                      columns=(FEATURE_COLUMNS or ['x']))
+                pred_X = pd.DataFrame(
+                    [[0] * (len(FEATURE_COLUMNS) if FEATURE_COLUMNS else 1)],
+                    columns=(FEATURE_COLUMNS or ["x"]),
+                )
 
             # Fallback if pred_X is all zeros
             try:
                 if pred_X is None or (pred_X.fillna(0).abs().sum().sum() == 0):
-                    df_pred2 = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+                    df_pred2 = pd.concat(
+                        [df, pd.DataFrame([new_row])], ignore_index=True
+                    )
                     featured2 = create_features(df_pred2)
-                    scenario2 = featured2.loc[featured2['Date'] == new_date].tail(1)
+                    scenario2 = featured2.loc[featured2["Date"] == new_date].tail(1)
                     if scenario2.empty:
                         scenario2 = featured2.iloc[[-1]]
-                    pred_X = scenario2.drop(['Date', 'CPI'], axis=1, errors='ignore')
+                    pred_X = scenario2.drop(["Date", "CPI"], axis=1, errors="ignore")
                     if FEATURE_COLUMNS:
                         pred_X = pred_X.reindex(columns=FEATURE_COLUMNS, fill_value=0)
             except Exception:
                 pass
 
             # Run prediction
-            pipe = best_model if not isinstance(best_model, dict) else (best_model.get('pipeline') or best_model.get('model') or None)
+            pipe = (
+                best_model
+                if not isinstance(best_model, dict)
+                else (best_model.get("pipeline") or best_model.get("model") or None)
+            )
             if pipe is None:
-                raise AttributeError('No pipeline available in best_model wrapper')
+                raise AttributeError("No pipeline available in best_model wrapper")
             pred_inflation = pipe.predict(pred_X)[0]
 
             # Defensive: fallback to historical median for extreme predictions
             df_dates = df.copy()
-            df_dates['Date'] = pd.to_datetime(df_dates['Date'])
-            latest_date_hist = df_dates['Date'].max()
+            df_dates["Date"] = pd.to_datetime(df_dates["Date"])
+            latest_date_hist = df_dates["Date"].max()
             one_year_ago = latest_date_hist - pd.Timedelta(days=365)
-            recent = df_dates[df_dates['Date'] >= one_year_ago].copy()
+            recent = df_dates[df_dates["Date"] >= one_year_ago].copy()
             yoy_vals = []
             for _, r in recent.iterrows():
-                d = r['Date']
+                d = r["Date"]
                 y_ago = d - pd.Timedelta(days=365)
-                closest_idx = (df_dates['Date'] - y_ago).abs().idxmin()
-                past_cpi = df_dates.loc[closest_idx, COLUMN_MAP['cpi']]
-                cur_cpi = r[COLUMN_MAP['cpi']]
+                closest_idx = (df_dates["Date"] - y_ago).abs().idxmin()
+                past_cpi = df_dates.loc[closest_idx, COLUMN_MAP["cpi"]]
+                cur_cpi = r[COLUMN_MAP["cpi"]]
                 if past_cpi:
                     yoy_vals.append(((cur_cpi - past_cpi) / past_cpi) * 100)
-            fallback_median = float(pd.Series(yoy_vals).median()) if len(yoy_vals) > 0 else 0.0
+            fallback_median = (
+                float(pd.Series(yoy_vals).median()) if len(yoy_vals) > 0 else 0.0
+            )
 
             prediction_raw = float(pred_inflation)
-            if pd.isna(prediction_raw) or prediction_raw < 0 or abs(prediction_raw) > 25:
+            if (
+                pd.isna(prediction_raw)
+                or prediction_raw < 0
+                or abs(prediction_raw) > 25
+            ):
                 prediction = round(fallback_median, 2)
                 interpretation_text = f"Model produced an extreme prediction ({round(prediction_raw, 2)}%). Using recent median fallback {prediction}% to keep outputs stable."
                 interpretation_color = "border-l-[#ffb4ab]"
@@ -905,7 +1093,7 @@ def _run_prediction(form_data):
     display_model_r2 = MODEL_R2
     try:
         if display_model_r2 is None and Path(METRICS_PATH).exists():
-            with open(METRICS_PATH, 'r') as f:
+            with open(METRICS_PATH, "r") as f:
                 md = json.load(f)
             display_model_r2 = _extract_model_r2(md, MODEL_NAME)
     except Exception:
@@ -923,21 +1111,29 @@ def _run_prediction(form_data):
                     try_fix = True
             except Exception:
                 try_fix = True
-        if try_fix and Path(BASE_DIR / 'models' / 'holdout.csv').exists() and best_model is not None:
-            _yoy_r2 = _compute_yoy_r2_from_holdout(best_model, holdout_path=BASE_DIR / 'models' / 'holdout.csv')
+        if (
+            try_fix
+            and Path(BASE_DIR / "models" / "holdout.csv").exists()
+            and best_model is not None
+        ):
+            _yoy_r2 = _compute_yoy_r2_from_holdout(
+                best_model, holdout_path=BASE_DIR / "models" / "holdout.csv"
+            )
             if _yoy_r2 is not None:
                 display_model_r2 = _yoy_r2
     except Exception:
         pass
 
     return {
-        'current_values': current_values,
-        'prediction': prediction,
-        'display_prediction': display_prediction,
-        'interpretation_text': interpretation_text,
-        'interpretation_color': interpretation_color,
-        'model_used': MODEL_NAME,
-        'model_r2': float(HOLDOUT_R2) if HOLDOUT_R2 is not None else (float(display_model_r2) if display_model_r2 else 0.0)
+        "current_values": current_values,
+        "prediction": prediction,
+        "display_prediction": display_prediction,
+        "interpretation_text": interpretation_text,
+        "interpretation_color": interpretation_color,
+        "model_used": MODEL_NAME,
+        "model_r2": float(HOLDOUT_R2)
+        if HOLDOUT_R2 is not None
+        else (float(display_model_r2) if display_model_r2 else 0.0),
     }
 
 
@@ -945,78 +1141,133 @@ def _run_prediction(form_data):
 # Cockpit route — the single-page application entry point
 # ---------------------------------------------------------------------------
 
-@app.route('/')
+
+@app.route("/")
 def cockpit():
-    return render_template('cockpit.html', env_warning=ENV_MISMATCH_WARNING)
+    return render_template("cockpit.html", env_warning=ENV_MISMATCH_WARNING)
 
 
 # ---------------------------------------------------------------------------
 # JSON API endpoints for the SPA cockpit
 # ---------------------------------------------------------------------------
 
-@app.route('/health')
+
+@app.route("/health")
 def health():
-    return _json_response({'status': 'ok', 'model_loaded': best_model is not None, 'data_status': _build_data_status()})
+    return _json_response(
+        {
+            "status": "ok",
+            "model_loaded": best_model is not None,
+            "data_status": _build_data_status(),
+        }
+    )
 
 
-@app.route('/api/command-center')
+@app.route("/api/command-center")
 def api_command_center():
     """Return combined dashboard, analysis, and freshness data as JSON."""
     try:
         dashboard = _build_dashboard_data()
         analysis = _build_analysis_data()
-        return _json_response({
-            'dashboard': dashboard,
-            'analysis': analysis,
-            'data_status': _build_data_status(),
-        })
+        return _json_response(
+            {
+                "dashboard": dashboard,
+                "analysis": analysis,
+                "data_status": _build_data_status(),
+            }
+        )
     except Exception as e:
         traceback.print_exc()
-        response = _json_response({'error': str(e)})
+        response = _json_response({"error": str(e)})
         return response, 500
 
 
-@app.route('/api/predictive-sandbox', methods=['GET', 'POST'])
+@app.route("/api/refresh", methods=["POST"])
+def api_refresh():
+    """Trigger the data pipeline refresh from the UI."""
+    # FAANG: protect with REFRESH_TOKEN if configured
+    expected = os.environ.get("REFRESH_TOKEN")
+    if expected:
+        got = (
+            request.headers.get("X-Refresh-Token")
+            or request.args.get("token")
+            or (request.get_json(silent=True) or {}).get("token")
+        )
+        if got != expected:
+            return _json_response(
+                {"error": "unauthorized — invalid refresh token"}
+            ), 401
+    try:
+        api_key = os.environ.get("FRED_API_KEY")
+        if not api_key:
+            return _json_response(
+                {"error": "FRED_API_KEY environment variable is missing on server"}
+            ), 500
+
+        # Call fetch_all_sources with 'all' cadence
+        results = fetch_all_sources(api_key=api_key, cadence="all")
+
+        has_error = any(
+            src.get("status") == "error"
+            for src in results.values()
+            if isinstance(src, dict)
+        )
+        if has_error:
+            return _json_response(
+                {"status": "completed_with_errors", "details": results}
+            ), 207
+
+        return _json_response({"status": "success", "details": results})
+    except Exception as e:
+        traceback.print_exc()
+        return _json_response({"error": str(e)}), 500
+
+
+@app.route("/api/predictive-sandbox", methods=["GET", "POST"])
 def api_predictive_sandbox():
     """GET: return forecast data + defaults. POST: run prediction and return result."""
-    if request.method == 'POST':
+    if request.method == "POST":
         data = request.get_json(silent=True) or request.form.to_dict()
         result = _run_prediction(data)
-        result['data_status'] = _build_data_status()
+        result["data_status"] = _build_data_status()
         return _json_response(result)
 
     # GET — return forecast data and default input values
     forecast = _build_forecast_data()
-    display_r2 = HOLDOUT_R2 if HOLDOUT_R2 is not None else (MODEL_R2 if MODEL_R2 is not None else 0.0)
-    return _json_response({
-        'forecast': forecast,
-        'defaults': _get_dynamic_defaults(),
-        'model_name': MODEL_NAME,
-        'model_r2': display_r2,
-        'data_status': _build_data_status(),
-    })
+    display_r2 = (
+        HOLDOUT_R2
+        if HOLDOUT_R2 is not None
+        else (MODEL_R2 if MODEL_R2 is not None else 0.0)
+    )
+    return _json_response(
+        {
+            "forecast": forecast,
+            "defaults": _get_dynamic_defaults(),
+            "model_name": MODEL_NAME,
+            "model_r2": display_r2,
+            "data_status": _build_data_status(),
+        }
+    )
 
 
-@app.route('/api/model-registry')
+@app.route("/api/model-registry")
 def api_model_registry():
     """Return model metrics, feature importances, and chart data as JSON."""
     data = _build_models_data()
-    data['data_status'] = _build_data_status()
+    data["data_status"] = _build_data_status()
     return _json_response(data)
 
 
-@app.route('/api/env-status')
+@app.route("/api/env-status")
 def api_env_status():
     """Return environment mismatch warning if any."""
-    return _json_response({
-        'warning': ENV_MISMATCH_WARNING
-    })
+    return _json_response({"warning": ENV_MISMATCH_WARNING})
 
 
 # Legacy routes removed because UI migrated to cockpit.html SPA
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("Starting VaticMacro Flask Server (no reloader)...")
     host = os.environ.get("FLASK_HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", os.environ.get("FLASK_PORT", 5000)))

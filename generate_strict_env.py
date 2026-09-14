@@ -11,13 +11,20 @@ installed are skipped with a warning so the script never crashes.
 # Most packages share the same name, but scikit-learn is imported as sklearn.
 CRITICAL_LIBRARIES = {
     "flask": "flask",
+    "gunicorn": "gunicorn",
     "pandas": "pandas",
     "numpy": "numpy",
     "scikit-learn": "sklearn",
     "xgboost": "xgboost",
+    "lightgbm": "lightgbm",
+    "pydantic": "pydantic",
+    "pandera": "pandera",
     "joblib": "joblib",
+    "requests": "requests",
+    "beautifulsoup4": "bs4",
     "matplotlib": "matplotlib",
     "seaborn": "seaborn",
+    "statsmodels": "statsmodels",
 }
 
 OUTPUT_FILE = "requirements-strict.txt"
@@ -32,7 +39,9 @@ def main():
             version = module.__version__
             pinned_lines.append(f"{pip_name}=={version}")
         except ImportError:
-            print(f"WARNING: '{pip_name}' (import as '{import_name}') is not installed — skipping.")
+            print(
+                f"WARNING: '{pip_name}' (import as '{import_name}') is not installed — skipping."
+            )
         except AttributeError:
             # Very unlikely, but guard against modules without __version__
             print(f"WARNING: '{pip_name}' has no __version__ attribute — skipping.")

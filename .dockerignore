@@ -6,6 +6,7 @@ __pycache__/
 *.pyc
 .idea/
 .vscode/
+paper/
 *.pdf
 *.tex
 *.png
@@ -15,3 +16,5 @@ scripts/
 *.ps1
 render.yaml
 docker-compose.yml
+models/pred_*.json
+models/pred_*.txt

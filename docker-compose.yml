@@ -2,4 +2,4 @@ services:
   vaticmacro:
     build: .
     ports:
-      - "5000:5000"
+      - "10000:10000"

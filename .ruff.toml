@@ -1,5 +1,0 @@
-# Ruff configuration: exclude Jupyter notebooks from linting
-exclude = ["notebooks/"]
-
-# Keep default line length sensible
-line-length = 88

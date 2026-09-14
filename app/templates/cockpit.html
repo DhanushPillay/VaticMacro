@@ -7,31 +7,36 @@
 <meta name="description" content="Advanced macroeconomic inflation prediction dashboard for India. Real-time KPIs, ML-powered forecasting, and scenario analysis."/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <style>
+  .skip-link{position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden}
+  .skip-link:focus{left:8px;top:8px;width:auto;height:auto;padding:8px 12px;background:#fff;color:#000;z-index:100;border-radius:6px}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
   :root {
-    --bg-base: #0a0f15;
-    --bg-surface: #111820;
-    --bg-card: #171f28;
-    --bg-elevated: #1e2731;
-    --border-subtle: #252d38;
-    --border-default: #2e3744;
-    --text-primary: #e4e8ee;
-    --text-secondary: #8b95a5;
-    --text-muted: #5f6b7a;
-    --accent-blue: #6b9aff;
-    --accent-blue-dim: rgba(107, 154, 255, 0.12);
-    --accent-green: #4edea3;
-    --accent-red: #ff6b6b;
-    --accent-amber: #fbbf24;
+    --bg-base: #06090e;
+    --bg-surface: rgba(17, 24, 32, 0.6);
+    --bg-card: rgba(23, 31, 40, 0.4);
+    --bg-elevated: rgba(30, 39, 49, 0.7);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --border-default: rgba(255, 255, 255, 0.08);
+    --text-primary: #eaf0f8;
+    --text-secondary: #9da8b7;
+    --text-muted: #64748b;
+    --accent-blue: #3b82f6;
+    --accent-blue-dim: rgba(59, 130, 246, 0.15);
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-red: #ef4444;
+    --accent-amber: #f59e0b;
   }
 
   body {
-    font-family: 'Inter', system-ui, sans-serif;
-    background: var(--bg-base);
+    font-family: 'Outfit', system-ui, sans-serif;
+    background: radial-gradient(circle at 10% 20%, #0f172a 0%, var(--bg-base) 60%);
     color: var(--text-primary);
     overflow: hidden;
+    height: 100vh;
   }
 
   /* Scrollbar styling */
@@ -42,24 +47,65 @@
 
   /* View transitions */
   #main-content {
-    animation: fadeSlideIn 0.3s ease-out;
+    animation: fadeSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
   }
   @keyframes fadeSlideIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from { opacity: 0; transform: translateY(12px) scale(0.99); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  /* Glassmorphic utilities */
+  .glass {
+    background: var(--bg-card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border-subtle);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Text Gradients */
+  .text-gradient {
+    background: linear-gradient(135deg, #e0e7ff 0%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .text-gradient-primary {
+    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-cyan) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .text-gradient-success {
+    background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .text-gradient-danger {
+    background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   /* Card hover micro-animation */
   .kpi-card {
-    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
     cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+    opacity: 0; transition: opacity 0.3s ease;
   }
   .kpi-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    transform: translateY(-3px) scale(1.01);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.4), 0 0 20px rgba(59, 130, 246, 0.05);
     border-color: var(--border-default);
+    background: rgba(30, 39, 49, 0.6);
   }
-
+  .kpi-card:hover::before { opacity: 1; }
   /* Sidebar nav item */
   .nav-item {
     transition: all 0.15s ease;
@@ -235,6 +281,7 @@ input::placeholder {
 </style>
 </head>
 <body class="flex h-screen antialiased">
+<a href="#main-content" class="skip-link">Skip to main content</a>
 
 <!-- ===== SIDEBAR ===== -->
 <nav id="sidebar" class="fixed left-0 top-0 h-full w-[220px] border-r flex flex-col py-6 z-30" style="background: var(--bg-surface); border-color: var(--border-subtle);">
@@ -298,7 +345,7 @@ input::placeholder {
   {% endif %}
 
   <!-- Dynamic content area -->
-  <main class="flex-1 overflow-y-auto p-6" id="main-content">
+  <main class="flex-1 overflow-y-auto p-6" id="main-content" role="main" tabindex="-1">
     <div class="flex items-center justify-center h-full">
       <div class="spinner"></div>
     </div>
@@ -357,7 +404,7 @@ function updateDataStatusBadge(status) {
 function renderDataStatus(status, showRefresh) {
   const color = dataStatusColor(status?.status);
   const indicators = status?.indicators || [];
-  return `<div class="rounded-xl p-4 mb-4" style="background: var(--bg-card); border: 1px solid ${color};"><div class="flex items-start justify-between gap-4"><div><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[18px]" style="color: ${color};">${status?.status === 'fresh' ? 'check_circle' : 'warning'}</span><p class="text-sm font-semibold" style="color: ${color};">${dataStatusLabel(status?.status)}</p></div><p class="text-xs mt-1" style="color: var(--text-secondary);">${status?.message || 'No data freshness information is available.'}</p><p class="text-[11px] mt-2" style="color: var(--text-muted);">Latest observation: ${status?.latest_observation_date || 'Unavailable'}${Number.isFinite(status?.age_days) ? ` • ${status.age_days} days old` : ''} • Dataset file updated: ${formatStatusDate(status?.dataset_updated_at)}</p></div>${showRefresh ? '<button id="refresh-command-center" class="text-xs px-3 py-2 rounded-lg shrink-0" style="border: 1px solid var(--border-default); color: var(--text-secondary);">Refresh now</button>' : ''}</div>${indicators.length ? `<div class="flex flex-wrap gap-2 mt-3">${indicators.map(indicator => `<span class="text-[11px] px-2 py-1 rounded" style="background: var(--bg-base); color: ${dataStatusColor(indicator.status)}; border: 1px solid var(--border-subtle);">${indicator.label}: ${indicator.observation_date} (${indicator.age_days}d)</span>`).join('')}</div>` : ''}</div>`;
+  return `<div class="glass rounded-xl p-4 mb-4" style="border-color: ${color};"><div class="flex items-start justify-between gap-4"><div><div class="flex items-center gap-2"><span class="material-symbols-outlined text-[18px]" style="color: ${color};">${status?.status === 'fresh' ? 'check_circle' : 'warning'}</span><p class="text-sm font-semibold" style="color: ${color};">${dataStatusLabel(status?.status)}</p></div><p class="text-xs mt-1" style="color: var(--text-secondary);">${status?.message || 'No data freshness information is available.'}</p><p class="text-[11px] mt-2" style="color: var(--text-muted);">Latest observation: ${status?.latest_observation_date || 'Unavailable'}${Number.isFinite(status?.age_days) ? ` • ${status.age_days} days old` : ''} • Dataset file updated: ${formatStatusDate(status?.dataset_updated_at)}</p></div>${showRefresh ? '<button id="refresh-command-center" class="text-xs px-3 py-2 rounded-lg shrink-0" style="border: 1px solid var(--border-default); color: var(--text-secondary);">Refresh now</button>' : ''}</div>${indicators.length ? `<div class="flex flex-wrap gap-2 mt-3">${indicators.map(indicator => `<span class="text-[11px] px-2 py-1 rounded" style="background: var(--bg-base); color: ${dataStatusColor(indicator.status)}; border: 1px solid var(--border-subtle);">${indicator.label}: ${indicator.observation_date} (${indicator.age_days}d)</span>`).join('')}</div>` : ''}</div>`;
 }
 
 function startCommandCenterAutoRefresh(container) {
@@ -426,9 +473,9 @@ async function fetchJSON(url, opts) {
 
 function card(title, value, subtitle, subtitleColor) {
   const sc = subtitleColor || 'var(--text-muted)';
-  return `<div class="kpi-card rounded-xl p-5" style="background: var(--bg-card); border: 1px solid var(--border-subtle);">
+  return `<div class="kpi-card glass rounded-xl p-5">
     <p class="text-[11px] uppercase tracking-wider mb-2" style="color: var(--text-muted);">${title}</p>
-    <p class="text-2xl font-bold" style="color: var(--text-primary);">${value}</p>
+    <p class="text-2xl font-bold text-gradient-primary">${value}</p>
     <p class="text-xs mt-2" style="color: ${sc};">${subtitle}</p>
   </div>`;
 }
@@ -471,9 +518,25 @@ async function loadCommandCenter(container, isRefresh = false) {
     setTimeout(() => {
       const refreshBtn = document.getElementById('refresh-command-center');
       if (refreshBtn) {
-        refreshBtn.onclick = () => {
-          destroyCharts();
-          loadCommandCenter(container, true);
+        refreshBtn.onclick = async () => {
+          const originalText = refreshBtn.innerText;
+          refreshBtn.innerText = "Refreshing...";
+          refreshBtn.disabled = true;
+          try {
+            const resp = await fetch('/api/refresh', { method: 'POST' });
+            if (!resp.ok) {
+              const err = await resp.json();
+              console.error("Refresh failed:", err);
+              alert("Failed to refresh data: " + (err.error || "Unknown error"));
+            }
+          } catch (e) {
+            console.error("Refresh error:", e);
+          } finally {
+            refreshBtn.innerText = originalText;
+            refreshBtn.disabled = false;
+            destroyCharts();
+            loadCommandCenter(container, true);
+          }
         };
       }
     }, 100);
@@ -502,20 +565,20 @@ async function loadCommandCenter(container, isRefresh = false) {
         ${card('Brent Crude (ICE)', '$' + d.brent_value,
                (d.brent_change >= 0 ? '+' : '') + d.brent_change + '% • Data as of ' + (status?.latest_observation_date || 'Unavailable'),
                changeColor(d.brent_change))}
-        <div class="kpi-card rounded-xl p-5" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" data-indicator="peak">
+        <div class="kpi-card glass rounded-xl p-5" data-indicator="peak">
           <p class="text-[11px] uppercase tracking-wider mb-2" style="color: var(--text-muted);">Peak Inflation</p>
-          <p class="text-2xl font-bold" style="color: var(--accent-red);">${d.peak_inflation}%</p>
+          <p class="text-2xl font-bold text-gradient-danger">${d.peak_inflation}%</p>
           <p class="text-xs mt-2" style="color: var(--text-muted);">${d.peak_date}</p>
         </div>
-        <div class="kpi-card rounded-xl p-5" style="background: var(--bg-card); border: 1px solid var(--border-subtle);" data-indicator="low">
+        <div class="kpi-card glass rounded-xl p-5" data-indicator="low">
           <p class="text-[11px] uppercase tracking-wider mb-2" style="color: var(--text-muted);">Lowest Inflation</p>
-          <p class="text-2xl font-bold" style="color: var(--accent-green);">${d.low_inflation}%</p>
+          <p class="text-2xl font-bold text-gradient-success">${d.low_inflation}%</p>
           <p class="text-xs mt-2" style="color: var(--text-muted);">${d.low_date}</p>
         </div>
       </div>
 
       <!-- Inflation History Chart -->
-      <div class="rounded-xl p-6 mb-6" style="background: var(--bg-card); border: 1px solid var(--border-subtle);">
+      <div class="glass rounded-xl p-6 mb-6">
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-xs uppercase tracking-wider font-medium" style="color: var(--text-muted);">Inflation History (YoY %)</h2>
           <span class="text-xs" style="color: var(--text-muted);">${d.num_observations} observations • ${d.num_features} indicators</span>
@@ -544,8 +607,16 @@ async function loadCommandCenter(container, isRefresh = false) {
             datasets: [{
               label: 'YoY Inflation %',
               data: d.inflation_history.map(i => i.value),
-              borderColor: 'var(--accent-blue)',
-              backgroundColor: 'rgba(77, 142, 255, 0.1)',
+              borderColor: '#3b82f6', /* Blue */
+              backgroundColor: (context) => {
+                const chart = context.chart;
+                const {ctx, chartArea} = chart;
+                if (!chartArea) return null;
+                const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                gradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+                gradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+                return gradient;
+              },
               fill: true,
               tension: 0.4,
               pointRadius: 4,
@@ -560,10 +631,11 @@ async function loadCommandCenter(container, isRefresh = false) {
             plugins: {
               legend: { display: false },
               tooltip: {
-                backgroundColor: '#171f28',
-                titleColor: '#8b95a5',
-                bodyColor: '#e4e8ee',
-                borderColor: '#2e3744',
+                backgroundColor: 'rgba(23, 31, 40, 0.8)',
+                backdropFilter: 'blur(8px)',
+                titleColor: 'var(--text-secondary)',
+                bodyColor: 'var(--text-primary)',
+                borderColor: 'var(--border-subtle)',
                 borderWidth: 1,
                 callbacks: { label: ctx => ctx.parsed.y + '% YoY' }
               }
@@ -573,12 +645,14 @@ async function loadCommandCenter(container, isRefresh = false) {
                 beginAtZero: false,
                 min: 0,
                 max: 6,
-                grid: { color: 'var(--border-subtle)' },
-                ticks: { color: 'var(--text-secondary)', font: { size: 10 }, callback: v => v + '%' }
+                title: { display: true, text: 'Inflation Rate (YoY %)', color: '#9da8b7', font: { size: 11, weight: 600 } },
+                grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                ticks: { color: '#9da8b7', font: { size: 10 }, callback: v => v + '%' }
               },
               x: {
-                grid: { color: 'var(--border-subtle)' },
-                ticks: { color: 'var(--text-secondary)', font: { size: 10 }, maxTicksLimit: 12 }
+                title: { display: true, text: 'Timeline (Months)', color: '#9da8b7', font: { size: 11, weight: 600 } },
+                grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                ticks: { color: '#9da8b7', font: { size: 10 }, maxTicksLimit: 12 }
               }
             }
           }
@@ -637,80 +711,7 @@ async function loadCommandCenter(container, isRefresh = false) {
     container.innerHTML = `<div class="text-center py-12"><p class="text-red-400">Error loading data: ${error.message}</p></div>`;
   }
 }
-            </table>
-          </div>
-        </div>
 
-        <!-- Key Findings + Stats -->
-        <div class="space-y-4">
-          <div class="rounded-xl p-6" style="background: var(--bg-card); border: 1px solid var(--border-subtle);">
-            <h2 class="text-xs uppercase tracking-wider font-medium mb-4" style="color: var(--text-muted);">Key Findings</h2>
-            <ul class="space-y-3 text-sm">
-              ${a.key_findings.map(f => `<li class="flex gap-2"><span style="color: var(--accent-blue);">•</span><span style="color: var(--text-secondary);">${f}</span></li>`).join('')}
-            </ul>
-          </div>
-          <div class="grid grid-cols-1 gap-3">
-            ${card('Avg Inflation (24m)', d.avg_inflation + '%', '', 'var(--text-muted)')}
-            <div class="rounded-xl p-5" style="background: var(--bg-card); border: 1px solid var(--border-subtle);">
-              <p class="text-[11px] uppercase tracking-wider mb-2" style="color: var(--text-muted);">Current Trend</p>
-              <p class="text-2xl font-bold" style="color: ${d.trend === 'Rising' ? 'var(--accent-red)' : 'var(--accent-green)'};">${d.trend}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    // Render inflation chart
-    const ctx = document.getElementById('cc-inflation-chart').getContext('2d');
-    const pointColors = d.inflation_history.values.map(v => inflationZoneColor(v));
-    activeCharts.push(new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: d.inflation_history.dates,
-        datasets: [{
-          label: 'YoY Inflation %',
-          data: d.inflation_history.values,
-          borderColor: '#6b9aff',
-          borderWidth: 2,
-          pointRadius: 4,
-          pointBackgroundColor: pointColors,
-          pointBorderColor: pointColors,
-          tension: 0.3,
-          fill: { target: 'origin', above: 'rgba(107, 154, 255, 0.06)' }
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: '#171f28', titleColor: '#8b95a5', bodyColor: '#e4e8ee',
-            borderColor: '#2e3744', borderWidth: 1,
-            callbacks: { label: ctx => ctx.parsed.y + '% YoY' }
-          }
-        },
-        scales: {
-          x: { ticks: { maxTicksLimit: 12, font: { size: 11 } }, grid: { color: '#1e2731' } },
-          y: { ticks: { callback: v => v + '%', font: { size: 11 } }, grid: { color: '#1e2731' } }
-        }
-      }
-    }));
-
-    // Wire up KPI card click → indicator detail modal
-    container.querySelectorAll('.kpi-card').forEach(card => {
-      card.addEventListener('click', () => {
-        // Try to find which indicator this card represents
-        const title = card.querySelector('p')?.textContent?.trim();
-        showIndicatorModal(title, a);
-      });
-    });
-
-  } catch (err) {
-    container.innerHTML = `<div class="flex items-center justify-center h-full">
-      <p class="text-sm" style="color: var(--accent-red);">Failed to load Command Center: ${err.message}</p>
-    </div>`;
-  }
-}
 
 function showIndicatorModal(title, analysisData) {
   // Map card titles to analysis data keys
@@ -833,7 +834,7 @@ async function loadPredictiveSandbox(container) {
             <div class="space-y-4" id="input-fields">
               <div class="flex items-center justify-between">
                 <label class="text-sm" style="color: var(--text-secondary);">WPI Index</label>
-                <input type="number" id="inp-wpi" class="scenario-input" step="0.1" value="${defs.wpi_index}"/>
+                <input type="number" id="inp-wpi" class="scenario-input" step="0.1" value="${defs.wpi_index}" aria-label="WPI Index" data-testid="wpi-input"/>
               </div>
               <div class="flex items-center justify-between">
                 <label class="text-sm" style="color: var(--text-secondary);">Interest Rate (%)</label>
@@ -867,7 +868,7 @@ async function loadPredictiveSandbox(container) {
             <p class="text-[11px] uppercase tracking-wider mb-3" style="color: var(--text-muted);">Model Output</p>
             <div class="mb-6">
               <p class="text-sm mb-1" style="color: var(--text-muted);">Predicted Inflation:</p>
-              <p class="text-5xl font-extrabold" id="pred-value" style="color: var(--text-primary);">—</p>
+              <p class="text-5xl font-extrabold" id="pred-value" data-testid="prediction" aria-live="polite" style="color: var(--text-primary);">—</p>
             </div>
             <!-- Gauge -->
             <div class="mb-6" id="gauge-container" style="display: none;">

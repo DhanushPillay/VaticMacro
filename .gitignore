@@ -37,11 +37,22 @@ env/
 
 # Data (needed for Docker deployment)
 
-# Academic / Paper files
-humanized_paper.tex
-plagiarism_report.tex
-plagiarism_screenshot.png
-references_list.tex
-VaticMacro_Details.pdf
+# Academic / Paper files (kept locally in paper/, excluded from image)
+paper/*
+!paper/README.md
 
 !data/
+
+# Coverage / test artifacts
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+
+# Lock / env artifacts
+uv.lock
+mlruns/
+benchmarks/.benchmarks/
